@@ -1,6 +1,6 @@
 # Seeing what each agent said
 
-Four ways, depending on whether you want to watch a run happen or read it afterwards.
+Five ways, depending on whether you want to watch a run happen or read it afterwards.
 
 | | Live | Artifact | Best for |
 | --- | --- | --- | --- |
@@ -8,6 +8,7 @@ Four ways, depending on whether you want to watch a run happen or read it afterw
 | [CLI progress](#2-cli-progress) | yes | no | Watching the score move without leaving the terminal |
 | [Transcripts](#3-transcripts) | no | md / html / json | Reading, sharing, diffing runs |
 | [Python](#4-from-python) | either | whatever you build | Evals and custom tooling |
+| [Web UI](#5-web-ui) | yes | persisted + replayable | Clicking through a run node by node, browsing past runs |
 
 ## 1. LangGraph Studio
 
@@ -141,6 +142,32 @@ for chunk in graph.stream({"problem": "..."}, stream_mode="updates"):
 
 `stream_mode="updates"` yields `{node_name: keys_that_node_returned}` as each node
 finishes — that's exactly what the CLI's progress output is built on.
+
+## 5. Web UI
+
+```bash
+uv sync --extra web
+uv run consensus-web    # http://127.0.0.1:8000
+```
+
+Three pages, reachable from the same top nav:
+
+- **Home** — submit a problem, watch it stream live over Server-Sent Events: a flow
+  panel on the left (Intake → Agent A · Round *N* → Agent B · Round *N* → ... →
+  Finalize, appended as each node finishes), a details panel on the right showing
+  the selected node's role, model, effort, duration, token usage, and content
+  rendered as Markdown.
+- **History** — every run that reached `finalize` (any verdict), most recent first,
+  searchable and sortable. Backed by SQLite (`CONSENSUS_DB_PATH`, default
+  `consensus.db`) — see [configuration.md](configuration.md#web-ui-run-history).
+  Runs that error out mid-way are not saved.
+- **Replay** (`/history/{id}`) — click a row to see that run exactly as it looked
+  live, reconstructed entirely from the saved state. No LLM calls, so it's free and
+  instant, and it survives server restarts.
+
+Export buttons on both Home (after a run finishes) and Replay produce the same
+`.md`/`.html`/`.json` as the CLI's `--out`, via `render_markdown`/`render_html`/
+`render_json` — one renderer, three ways to reach it.
 
 ## Diagramming the graph
 

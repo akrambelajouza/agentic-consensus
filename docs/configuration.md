@@ -125,6 +125,16 @@ The Studio browser host is not controlled by `.env`. Launch the local server wit
 uv run langgraph dev --studio-url https://eu.smith.langchain.com
 ```
 
+### Web UI run history
+
+| Variable | Default | Purpose |
+| --- | --- | --- |
+| `CONSENSUS_DB_PATH` | `consensus.db` | SQLite file the web UI persists completed runs to |
+
+Only `consensus-web` reads this — the CLI, Studio, and library never write here.
+Every run that reaches `finalize` (any verdict) is saved automatically; a run that
+errors mid-way is not. Browse past runs on the web UI's History page.
+
 ## Bad values fail loudly
 
 A malformed setting raises at startup, before the first paid call, naming the

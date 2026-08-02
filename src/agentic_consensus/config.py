@@ -19,6 +19,7 @@ Variable                         Default    Effect
 ``AGENT_A_EFFORT``               ``high``   ``reasoning_effort`` for the author
 ``AGENT_B_EFFORT``               ``high``   ``reasoning_effort`` for the reviewer
 ``OPENROUTER_IGNORE_PROVIDERS``  ``Azure``  Backends kept out of OpenRouter routing
+``CONSENSUS_DB_PATH``            see below  SQLite file for the web UI's run history
 ===============================  =========  ==================================
 
 Values are read on each access rather than frozen at import, so a test or a notebook
@@ -71,6 +72,8 @@ DEFAULT_OPENROUTER_IGNORE_PROVIDERS = ("Azure",)
 # Union of both providers' vocabularies. `models.py` maps whichever levels the
 # target provider doesn't accept onto its nearest supported neighbour.
 VALID_EFFORTS = ("minimal", "low", "medium", "high", "xhigh", "max")
+
+DEFAULT_DB_PATH = "consensus.db"
 
 
 def _load_dotenv() -> None:
@@ -166,6 +169,16 @@ def openrouter_ignore_providers() -> list[str]:
     if raw is None:
         return list(DEFAULT_OPENROUTER_IGNORE_PROVIDERS)
     return [name.strip() for name in raw.split(",") if name.strip()]
+
+
+def db_path() -> str:
+    """SQLite file the web UI persists run history to. ``CONSENSUS_DB_PATH``.
+
+    Not validated beyond "nonempty" — any string is a valid path, and sqlite
+    creates the file itself, so there's nothing to fail loudly about here.
+    """
+    raw = os.environ.get("CONSENSUS_DB_PATH")
+    return raw.strip() if raw and raw.strip() else DEFAULT_DB_PATH
 
 
 def settings() -> dict[str, object]:

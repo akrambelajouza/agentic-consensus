@@ -5,3 +5,4 @@ __pycache__/
 .langgraph_api/
 dist/
 *.egg-info/
+*.db

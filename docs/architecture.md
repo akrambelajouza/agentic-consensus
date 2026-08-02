@@ -78,15 +78,25 @@ class ConsensusState(TypedDict, total=False):
     reviews: Annotated[list[Review], operator.add]   # full history
     verdict: Literal["consensus", "no_consensus", "stalled"]
     final_answer: str
+    usage: Annotated[list[Usage], operator.add]      # one entry per node's LLM call
 ```
 
-`proposals` and `reviews` use additive reducers, so each round **appends** instead of
-overwriting. That history is what `finalize` summarises over and what the transcript
-renderer walks pairwise — round *N*'s proposal sits at `proposals[N-1]` and its
-review at `reviews[N-1]`.
+`proposals`, `reviews`, and `usage` use additive reducers, so each round **appends**
+instead of overwriting. That history is what `finalize` summarises over and what the
+transcript renderer (and the web UI) walks pairwise — round *N*'s proposal sits at
+`proposals[N-1]` and its review at `reviews[N-1]`.
 
 `proposal` (singular) is the latest one, kept separate so `agent_a` and `agent_b`
 don't have to index into the history on every call.
+
+`usage` records token accounting per node execution — `{node, role, model,
+input_tokens, output_tokens, total_tokens}` — captured from each LLM response's
+`usage_metadata`. The two structured-output nodes (`intake`, `agent_b`) call
+`with_structured_output(..., include_raw=True)` specifically to get at this, since the
+default call only returns the parsed object. Nothing in the graph or CLI reads
+`usage`; it exists for the web UI's per-node metadata display (see
+[visualization.md](visualization.md#5-web-ui)) and rides along in checkpointer
+round-trips like everything else in the state.
 
 ## Structured verdicts
 
@@ -133,11 +143,14 @@ placeholder text like "N/A" that the model has to interpret.
 ```
 src/agentic_consensus/
 ├── config.py      every tunable, read from the environment
-├── state.py       ConsensusState, Criteria, Review
+├── state.py       ConsensusState, Criteria, Review, Usage
 ├── models.py      provider-agnostic model factories
 ├── prompts.py     the system prompts
 ├── nodes.py       intake / agent_a / agent_b / finalize
 ├── graph.py       wiring + route(), exports `graph`
 ├── transcript.py  markdown / HTML / JSON renderers
-└── __main__.py    CLI runner
+├── __main__.py    CLI runner
+├── web.py         FastAPI app (`--extra web`): routes, worker thread, persistence
+├── web_templates.py  Home/History/Replay pages — shared CSS/JS, self-contained HTML
+└── db.py          SQLite run history for the web UI
 ```

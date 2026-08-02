@@ -96,6 +96,32 @@ settings; print(settings())"` — or just read the header the CLI prints on ever
 Your editor is pointed at a different interpreter than `.venv`. Select
 `.venv/bin/python` as the workspace interpreter. `uv run` is unaffected.
 
+## Web UI
+
+### `TypeError: Failed to fetch` when clicking Run
+
+The browser tab is open but `consensus-web` isn't running (or was stopped) — the
+page itself doesn't go stale, so this is easy to hit after closing the terminal it
+was running in. Start it again:
+
+```bash
+uv run consensus-web
+```
+
+and confirm you're browsing the address it printed (`http://127.0.0.1:8000` by
+default, or your `--port` if you set one).
+
+### A run doesn't show up in History
+
+By design if the run errored mid-way — only runs that reach `finalize` (any
+verdict: consensus, no_consensus, or stalled) are persisted. Check the error banner
+on the page, or the server's stderr, for what actually failed.
+
+If a run that *did* finish is still missing, check `CONSENSUS_DB_PATH` hasn't
+changed between runs — each value points at a different SQLite file, so a run saved
+under one path won't appear when the server is started with another. See
+[configuration.md](configuration.md#web-ui-run-history).
+
 ## Run quality
 
 ### Agent B approves round 1 every time

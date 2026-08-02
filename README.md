@@ -136,11 +136,18 @@ uv sync --extra web
 uv run consensus-web                  # http://127.0.0.1:8000
 ```
 
-A single local page: submit a problem, watch criteria/rounds/verdict stream in live
-(same node-by-node events as the CLI, over Server-Sent Events), then download the
-result as `.md`/`.html`/`.json`. No auth, no external service — it's a thin transport
+Submit a problem on **Home** and watch it stream live, node by node (same events the
+CLI logs to stderr, over Server-Sent Events): a flow panel on the left, and a details
+panel on the right showing each node's model, effort, duration, token usage, and
+content rendered as markdown. No auth, no external service — it's a thin transport
 around `graph.stream()`, so it reads whatever `.env` already configures. Use
 `--host 0.0.0.0` to expose it beyond localhost, `--port` to change the port.
+
+Every run that reaches `finalize` is saved to a local SQLite file
+(`CONSENSUS_DB_PATH`, default `consensus.db`) and shows up on **History** — a
+searchable, sortable table of past runs. Click one to replay it on its own page,
+identical to how it looked live, reconstructed entirely from the saved state (no
+LLM calls). Runs that error out mid-way are not saved.
 
 ### Studio — inspect and replay individual steps
 
@@ -204,5 +211,7 @@ src/agentic_consensus/
 ├── graph.py       StateGraph wiring + router, exports `graph`
 ├── transcript.py  markdown / HTML / JSON renderers
 ├── __main__.py    CLI runner
-└── web.py         FastAPI web UI (`--extra web`), serves the SPA + streams runs
+├── web.py         FastAPI app (`--extra web`): routes, worker thread, persistence
+├── web_templates.py  Home/History/Replay pages — shared CSS/JS, self-contained HTML
+└── db.py          SQLite run history for the web UI
 ```

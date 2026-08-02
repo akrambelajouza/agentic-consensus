@@ -10,7 +10,7 @@ B approves or a stopping rule fires.
 | [architecture.md](architecture.md) | The graph, the state, the routing rules, why the moderator isn't the router |
 | [configuration.md](configuration.md) | Every `.env` variable: rounds, stall guard, models, token budgets, effort |
 | [providers.md](providers.md) | Anthropic, OpenAI and OpenRouter; mixing vendors across roles |
-| [visualization.md](visualization.md) | Watching a run and exporting a shareable transcript |
+| [visualization.md](visualization.md) | Watching a run, the web UI, and exporting a shareable transcript |
 | [troubleshooting.md](troubleshooting.md) | Failure modes and what actually causes them |
 
 ## 60-second version
@@ -34,6 +34,13 @@ Or run it interactively in LangGraph Studio:
 
 ```bash
 uv run langgraph dev --studio-url https://eu.smith.langchain.com
+```
+
+Or from a browser, with a history of past runs:
+
+```bash
+uv sync --extra web
+uv run consensus-web    # http://127.0.0.1:8000
 ```
 
 Or from Python:
