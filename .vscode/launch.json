@@ -1,0 +1,36 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Consensus: debug one CLI round",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "agentic_consensus",
+      "args": [
+        "Explain why idempotency keys matter in an HTTP API.",
+        "--rounds",
+        "1"
+      ],
+      "cwd": "${workspaceFolder}",
+      "envFile": "${workspaceFolder}/.env",
+      "console": "integratedTerminal",
+      "justMyCode": true
+    },
+    {
+      "name": "Consensus: attach to LangGraph Studio",
+      "type": "debugpy",
+      "request": "attach",
+      "connect": {
+        "host": "127.0.0.1",
+        "port": 5678
+      },
+      "pathMappings": [
+        {
+          "localRoot": "${workspaceFolder}",
+          "remoteRoot": "${workspaceFolder}"
+        }
+      ],
+      "justMyCode": true
+    }
+  ]
+}

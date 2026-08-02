@@ -1,0 +1,7 @@
+{
+  "dependencies": ["."],
+  "graphs": {
+    "consensus": "agentic_consensus.graph:graph"
+  },
+  "env": ".env"
+}
