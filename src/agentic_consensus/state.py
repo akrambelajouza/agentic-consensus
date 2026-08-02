@@ -51,6 +51,20 @@ class Review(BaseModel):
         return max(1, min(10, int(value)))
 
 
+class Usage(BaseModel):
+    """Token accounting for a single LLM call, for the web UI's per-node metadata.
+
+    ``None`` fields mean the provider didn't report that number, not zero.
+    """
+
+    node: str
+    role: str
+    model: str
+    input_tokens: int | None = None
+    output_tokens: int | None = None
+    total_tokens: int | None = None
+
+
 class ConsensusState(TypedDict, total=False):
     """State threaded through the graph.
 
@@ -76,3 +90,8 @@ class ConsensusState(TypedDict, total=False):
     # Set by finalize.
     verdict: Verdict
     final_answer: str
+
+    # Per-call token accounting, one entry per node execution. Additive for the same
+    # reason as `proposals`/`reviews`: the web UI wants the full history, not just the
+    # latest call.
+    usage: Annotated[list[Usage], operator.add]

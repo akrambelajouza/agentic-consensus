@@ -129,6 +129,19 @@ round 2  agent A proposed (5,006 chars)
 Consensus reached
 ```
 
+### Web UI — run it from a browser
+
+```bash
+uv sync --extra web
+uv run consensus-web                  # http://127.0.0.1:8000
+```
+
+A single local page: submit a problem, watch criteria/rounds/verdict stream in live
+(same node-by-node events as the CLI, over Server-Sent Events), then download the
+result as `.md`/`.html`/`.json`. No auth, no external service — it's a thin transport
+around `graph.stream()`, so it reads whatever `.env` already configures. Use
+`--host 0.0.0.0` to expose it beyond localhost, `--port` to change the port.
+
 ### Studio — inspect and replay individual steps
 
 ```bash
@@ -190,5 +203,6 @@ src/agentic_consensus/
 ├── nodes.py       intake / agent_a / agent_b / finalize
 ├── graph.py       StateGraph wiring + router, exports `graph`
 ├── transcript.py  markdown / HTML / JSON renderers
-└── __main__.py    CLI runner
+├── __main__.py    CLI runner
+└── web.py         FastAPI web UI (`--extra web`), serves the SPA + streams runs
 ```

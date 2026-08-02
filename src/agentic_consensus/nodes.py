@@ -7,13 +7,31 @@ from langchain_core.messages import HumanMessage, SystemMessage
 
 from . import config, prompts
 from .models import agent_a_llm, agent_b_llm, moderator_llm
-from .state import ConsensusState, Criteria, Review
+from .state import ConsensusState, Criteria, Review, Usage
 
 
 def _as_review(value: Review | dict) -> Review:
     """Reviews come back from the model as ``Review`` but round-trip through the
     checkpointer as plain dicts. Normalise so callers never have to care."""
     return value if isinstance(value, Review) else Review.model_validate(value)
+
+
+def _usage(node: str, role: str, message) -> Usage:
+    """Pull token counts off a response message for the web UI's per-node metadata.
+
+    ``usage_metadata`` is populated by both the Anthropic and OpenAI-compatible
+    (OpenRouter included) integrations, so this needs no provider branching. Missing
+    counts stay ``None`` rather than 0, so the UI can tell "not reported" from "free".
+    """
+    meta = getattr(message, "usage_metadata", None) or {}
+    return Usage(
+        node=node,
+        role=role,
+        model=config.model_spec(role),
+        input_tokens=meta.get("input_tokens"),
+        output_tokens=meta.get("output_tokens"),
+        total_tokens=meta.get("total_tokens"),
+    )
 
 
 def _latest_review(state: ConsensusState) -> Review | None:
@@ -27,18 +45,24 @@ def _format_criteria(criteria: list[str]) -> str:
 
 def intake(state: ConsensusState) -> dict:
     """Moderator: turn the raw problem into a restated statement and criteria."""
-    llm = moderator_llm().with_structured_output(Criteria, method="json_schema")
-    framing: Criteria = llm.invoke(
+    llm = moderator_llm().with_structured_output(
+        Criteria, method="json_schema", include_raw=True
+    )
+    result = llm.invoke(
         [
             SystemMessage(prompts.MODERATOR_INTAKE),
             HumanMessage(f"Problem from the user:\n\n{state['problem']}"),
         ]
     )
+    if result["parsing_error"] is not None:
+        raise result["parsing_error"]
+    framing: Criteria = result["parsed"]
     return {
         "restated_problem": framing.restated_problem,
         "criteria": framing.criteria,
         "round": 0,
         "max_rounds": state.get("max_rounds") or config.max_rounds(),
+        "usage": [_usage("intake", "moderator", result["raw"])],
     }
 
 
@@ -62,25 +86,27 @@ def agent_a(state: ConsensusState) -> dict:
             "Output the full revised solution, not a description of your edits.",
         ]
 
+    response = agent_a_llm().invoke(
+        [SystemMessage(prompts.AGENT_A), HumanMessage("\n\n".join(parts))]
+    )
     # `.text` is a str subclass (TextAccessor); coerce so what lands in state and the
     # checkpointer is a plain str.
-    text = str(
-        agent_a_llm()
-        .invoke([SystemMessage(prompts.AGENT_A), HumanMessage("\n\n".join(parts))])
-        .text
-    )
+    text = str(response.text)
 
     return {
         "round": state["round"] + 1,
         "proposal": text,
         "proposals": [text],
+        "usage": [_usage("agent_a", "agent_a", response)],
     }
 
 
 def agent_b(state: ConsensusState) -> dict:
     """Agent B: grade the current proposal against the criteria."""
-    llm = agent_b_llm().with_structured_output(Review, method="json_schema")
-    review: Review = llm.invoke(
+    llm = agent_b_llm().with_structured_output(
+        Review, method="json_schema", include_raw=True
+    )
+    result = llm.invoke(
         [
             SystemMessage(prompts.AGENT_B),
             HumanMessage(
@@ -90,7 +116,13 @@ def agent_b(state: ConsensusState) -> dict:
             ),
         ]
     )
-    return {"reviews": [review]}
+    if result["parsing_error"] is not None:
+        raise result["parsing_error"]
+    review: Review = result["parsed"]
+    return {
+        "reviews": [review],
+        "usage": [_usage("agent_b", "agent_b", result["raw"])],
+    }
 
 
 def finalize(state: ConsensusState) -> dict:
@@ -138,20 +170,21 @@ def finalize(state: ConsensusState) -> dict:
         ),
     }[verdict]
 
-    text = str(
-        moderator_llm()
-        .invoke(
-            [
-                SystemMessage(system),
-                HumanMessage(
-                    f"PROBLEM\n{state['restated_problem']}\n\n"
-                    f"ACCEPTANCE CRITERIA\n{_format_criteria(state['criteria'])}\n\n"
-                    f"OUTCOME\n{outcome}\n\n"
-                    f"FULL HISTORY\n{history}"
-                ),
-            ]
-        )
-        .text
+    response = moderator_llm().invoke(
+        [
+            SystemMessage(system),
+            HumanMessage(
+                f"PROBLEM\n{state['restated_problem']}\n\n"
+                f"ACCEPTANCE CRITERIA\n{_format_criteria(state['criteria'])}\n\n"
+                f"OUTCOME\n{outcome}\n\n"
+                f"FULL HISTORY\n{history}"
+            ),
+        ]
     )
+    text = str(response.text)
 
-    return {"verdict": verdict, "final_answer": text}
+    return {
+        "verdict": verdict,
+        "final_answer": text,
+        "usage": [_usage("finalize", "moderator", response)],
+    }

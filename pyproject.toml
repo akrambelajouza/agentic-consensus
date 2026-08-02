@@ -15,9 +15,11 @@ dev = ["debugpy>=1.8", "langgraph-cli[inmem]>=0.4"]
 openai = ["langchain-openai>=1.4"]
 # OpenRouter speaks the OpenAI wire format, so it needs the same client.
 openrouter = ["langchain-openai>=1.4"]
+web = ["fastapi>=0.115", "uvicorn>=0.30"]
 
 [project.scripts]
 consensus = "agentic_consensus.__main__:main"
+consensus-web = "agentic_consensus.web:main"
 
 [build-system]
 requires = ["hatchling"]
