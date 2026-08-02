@@ -26,6 +26,12 @@ _SHARED_CSS = """
   :root { --fg:#e8e8ea; --muted:#9a9aa2; --bg:#131316; --card:#1c1c21;
           --line:#2c2c33; --ok:#4ac16f; --warn:#e0a458; --err:#f28b82; --accent:#8fa4ff; }
 }
+/* Explicit choice from the theme toggle wins over the OS preference above —
+   higher-specificity attribute selectors, applied via JS as data-theme on <html>. */
+:root[data-theme="light"] { color-scheme: light; --fg:#111; --muted:#666; --bg:#fff;
+      --card:#f6f6f7; --line:#e2e2e5; --ok:#0a7d33; --warn:#a2500a; --err:#c0392b; --accent:#3b5bdb; }
+:root[data-theme="dark"] { color-scheme: dark; --fg:#e8e8ea; --muted:#9a9aa2; --bg:#131316;
+      --card:#1c1c21; --line:#2c2c33; --ok:#4ac16f; --warn:#e0a458; --err:#f28b82; --accent:#8fa4ff; }
 * { box-sizing: border-box; }
 body { margin:0; padding:2.5rem 1.25rem 5rem; background:var(--bg); color:var(--fg);
        font:16px/1.6 ui-sans-serif,-apple-system,"Segoe UI",Roboto,sans-serif; }
@@ -70,12 +76,17 @@ pre { white-space:pre-wrap; word-wrap:break-word; background:var(--bg);
       margin:.6em 0; font:13.5px/1.55 ui-monospace,SFMono-Regular,Menlo,monospace; }
 .hidden { display:none; }
 
-.topnav { display:flex; gap:1.25rem; margin:0 0 1.75rem; padding-bottom:1rem;
-          border-bottom:1px solid var(--line); }
+.topnav { display:flex; justify-content:space-between; align-items:center;
+          margin:0 0 1.75rem; padding-bottom:1rem; border-bottom:1px solid var(--line); }
+.topnav-links { display:flex; gap:1.25rem; }
 .topnav a { color:var(--muted); text-decoration:none; font-weight:600; font-size:.9rem;
             padding:.3rem 0; border-bottom:2px solid transparent; }
 .topnav a:hover { color:var(--fg); }
 .topnav a.active { color:var(--accent); border-bottom-color:var(--accent); }
+.theme-toggle { background:transparent; color:var(--fg); border:1px solid var(--line);
+                border-radius:8px; width:2.2rem; height:2.2rem; padding:0; font-size:1rem;
+                line-height:1; display:flex; align-items:center; justify-content:center; }
+.theme-toggle:hover { background:rgba(128,128,128,.1); }
 .back-link { display:inline-block; color:var(--accent); text-decoration:none;
              font-size:.85rem; font-weight:600; margin:0 0 .85rem; }
 .back-link:hover { text-decoration:underline; }
@@ -143,6 +154,25 @@ table.runs-table td.problem-cell { max-width:28rem; overflow:hidden; text-overfl
 # nothing unconditionally calls a function that touches it, which none of these do.
 
 _SHARED_JS = r"""
+// --- Theme toggle -------------------------------------------------------------
+// `_THEME_INIT_SCRIPT` (in <head>) already applied any stored choice before this
+// ran, so the page never flashes the wrong theme; this just wires the button and
+// keeps localStorage in sync with it.
+(function () {
+  const btn = document.getElementById("theme-toggle");
+  if (!btn) return;
+  const systemPrefersDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
+  const current = () => document.documentElement.getAttribute("data-theme") || (systemPrefersDark ? "dark" : "light");
+  const paint = () => { btn.textContent = current() === "dark" ? "☀️" : "🌙"; };
+  paint();
+  btn.addEventListener("click", () => {
+    const next = current() === "dark" ? "light" : "dark";
+    document.documentElement.setAttribute("data-theme", next);
+    localStorage.setItem("theme", next);
+    paint();
+  });
+})();
+
 const VERDICT_LABELS = {
   consensus: "Consensus reached",
   no_consensus: "No consensus — round limit reached",
@@ -432,10 +462,26 @@ def _nav_html(active: str) -> str:
 
     return (
         '<nav class="topnav">'
+        '<div class="topnav-links">'
         f'<a href="/"{cls("home")}>Home</a>'
         f'<a href="/history"{cls("history")}>History</a>'
+        "</div>"
+        '<button type="button" id="theme-toggle" class="theme-toggle" '
+        'aria-label="Toggle light/dark theme"></button>'
         "</nav>"
     )
+
+
+# Applied before <body> renders, so the page never flashes the wrong theme while
+# the shared <script> (loaded after `body` further down) sets up the toggle.
+_THEME_INIT_SCRIPT = """
+(function() {
+  var stored = localStorage.getItem("theme");
+  if (stored === "light" || stored === "dark") {
+    document.documentElement.setAttribute("data-theme", stored);
+  }
+})();
+"""
 
 
 def _page(*, active: str, body: str, script: str) -> str:
@@ -443,7 +489,9 @@ def _page(*, active: str, body: str, script: str) -> str:
 <html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Agentic Consensus</title>
-<style>{_SHARED_CSS}</style></head>
+<style>{_SHARED_CSS}</style>
+<script>{_THEME_INIT_SCRIPT}</script>
+</head>
 <body><main>
 {_nav_html(active)}
 {body}
