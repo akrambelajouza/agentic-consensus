@@ -59,10 +59,20 @@ class Usage(BaseModel):
 
     node: str
     role: str
+    provider: str
     model: str
+    generation_id: str | None = None
     input_tokens: int | None = None
     output_tokens: int | None = None
     total_tokens: int | None = None
+    reasoning_tokens: int | None = None
+    cached_input_tokens: int | None = None
+    cache_write_tokens: int | None = None
+    cost: float | None = None
+    upstream_inference_cost: float | None = None
+    cost_source: Literal["provider_reported", "estimated", "unavailable"] = (
+        "unavailable"
+    )
 
 
 class ConsensusState(TypedDict, total=False):

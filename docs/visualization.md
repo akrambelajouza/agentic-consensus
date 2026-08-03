@@ -155,8 +155,9 @@ Three pages, reachable from the same top nav:
 - **Home** — submit a problem, watch it stream live over Server-Sent Events: a flow
   panel on the left (Intake → Agent A · Round *N* → Agent B · Round *N* → ... →
   Finalize, appended as each node finishes), a details panel on the right showing
-  the selected node's role, model, effort, duration, token usage, and content
-  rendered as Markdown.
+  the selected node's role, model, effort, duration, token usage, reasoning/cache
+  token details, provider-reported cost, and content rendered as Markdown. The flow
+  shows tokens and cost per call; a completed run shows total calls, tokens, and cost.
 - **History** — every run that reached `finalize` (any verdict), most recent first,
   searchable and sortable. Backed by SQLite (`CONSENSUS_DB_PATH`, default
   `consensus.db`) — see [configuration.md](configuration.md#web-ui-run-history).

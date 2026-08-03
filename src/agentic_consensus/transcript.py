@@ -19,7 +19,7 @@ import json
 from typing import Any
 
 from .models import active_models
-from .state import ConsensusState, Review
+from .state import ConsensusState, Review, Usage
 
 VERDICT_LABELS = {
     "consensus": "Consensus reached",
@@ -42,9 +42,31 @@ def _rounds(state: ConsensusState) -> list[tuple[int, str, Review | None]]:
     ]
 
 
+def _usage_summary(
+    state: ConsensusState,
+) -> tuple[list[dict[str, Any]], int | None, float | None]:
+    usage = [
+        u.model_dump() if isinstance(u, Usage) else dict(u)
+        for u in state.get("usage") or []
+    ]
+    tokens = [u["total_tokens"] for u in usage if u.get("total_tokens") is not None]
+    costs = [u["cost"] for u in usage if u.get("cost") is not None]
+    total_tokens = sum(tokens) if usage and len(tokens) == len(usage) else None
+    total_cost = sum(costs) if usage and len(costs) == len(usage) else None
+    return usage, total_tokens, total_cost
+
+
+def _format_cost(cost: float | None) -> str:
+    if cost is None:
+        return "—"
+    digits = 6 if cost == 0 or abs(cost) < 0.01 else 4 if abs(cost) < 1 else 2
+    return f"${cost:.{digits}f}"
+
+
 def summary(state: ConsensusState) -> dict[str, Any]:
     """Compact machine-readable summary of a run."""
     reviews = [_as_review(r) for r in state.get("reviews") or []]
+    usage, total_tokens, total_cost = _usage_summary(state)
     return {
         "verdict": state.get("verdict"),
         "rounds": state.get("round"),
@@ -53,6 +75,10 @@ def summary(state: ConsensusState) -> dict[str, Any]:
         "approved": bool(reviews and reviews[-1].approved),
         "criteria": list(state.get("criteria") or []),
         "models": active_models(),
+        "model_calls": len(usage),
+        "total_tokens": total_tokens,
+        "total_cost": total_cost,
+        "usage": usage,
     }
 
 
@@ -62,6 +88,7 @@ def render_markdown(state: ConsensusState) -> str:
     verdict = state.get("verdict") or "unknown"
     reviews = [_as_review(r) for r in state.get("reviews") or []]
     scores = " → ".join(f"{r.score}/10" for r in reviews) or "—"
+    usage, total_tokens, total_cost = _usage_summary(state)
 
     out: list[str] = [
         "# Consensus run",
@@ -69,6 +96,13 @@ def render_markdown(state: ConsensusState) -> str:
         f"**Outcome:** {VERDICT_LABELS.get(verdict, verdict)}  ",
         f"**Rounds:** {state.get('round', '?')} of {state.get('max_rounds', '?')}  ",
         f"**Score trend:** {scores}",
+        f"**Model calls:** {len(usage)}  ",
+        (
+            f"**Total tokens:** {total_tokens:,}"
+            if total_tokens is not None
+            else "**Total tokens:** —"
+        ),
+        f"**Total cost:** {_format_cost(total_cost)}",
         "",
         "| Role | Model |",
         "| --- | --- |",
@@ -163,6 +197,7 @@ def render_html(state: ConsensusState, *, title: str = "Consensus run") -> str:
     verdict = state.get("verdict") or "unknown"
     reviews = [_as_review(r) for r in state.get("reviews") or []]
     rounds = _rounds(state)
+    usage, total_tokens, total_cost = _usage_summary(state)
 
     meta = [
         f"<li><b>Outcome:</b> {_esc(VERDICT_LABELS.get(verdict, verdict))}</li>",
@@ -174,6 +209,13 @@ def render_html(state: ConsensusState, *, title: str = "Consensus run") -> str:
         f"<li><b>Author:</b> <code>{_esc(models['agent_a'])}</code></li>",
         f"<li><b>Reviewer:</b> <code>{_esc(models['agent_b'])}</code></li>",
         f"<li><b>Moderator:</b> <code>{_esc(models['moderator'])}</code></li>",
+        f"<li><b>Model calls:</b> {len(usage)}</li>",
+        (
+            f"<li><b>Total tokens:</b> {total_tokens:,}</li>"
+            if total_tokens is not None
+            else "<li><b>Total tokens:</b> &mdash;</li>"
+        ),
+        f"<li><b>Total cost:</b> {_esc(_format_cost(total_cost))}</li>",
     ]
 
     criteria = "".join(

@@ -44,6 +44,7 @@ h2 { font-size:1rem; margin:0 0 .85rem; text-transform:uppercase; letter-spacing
 .meta li { background:var(--card); border:1px solid var(--line); border-radius:999px;
            padding:.25rem .75rem; font-size:.85rem; }
 .meta b { font-weight:600; }
+.meta.compact { margin-bottom:.75rem; }
 code { background:var(--bg); padding:.1rem .35rem; border-radius:4px; font-size:.9em; }
 textarea { width:100%; min-height:7rem; resize:vertical; font:inherit; padding:.75rem;
            background:var(--card); color:var(--fg); border:1px solid var(--line);
@@ -90,6 +91,17 @@ pre { white-space:pre-wrap; word-wrap:break-word; background:var(--bg);
 .back-link { display:inline-block; color:var(--accent); text-decoration:none;
              font-size:.85rem; font-weight:600; margin:0 0 .85rem; }
 .back-link:hover { text-decoration:underline; }
+
+.replay-header { display:grid; grid-template-columns:minmax(0, 1fr) max-content;
+                 gap:1.5rem; align-items:start; }
+.replay-header .sub { margin-bottom:0; }
+.replay-meta { display:flex; flex-direction:column; align-items:stretch; margin:0;
+               min-width:13rem; }
+.replay-meta li { border-radius:8px; }
+@media (max-width: 860px) {
+  .replay-header { grid-template-columns:1fr; }
+  .replay-meta { min-width:0; }
+}
 
 .history-toolbar { display:flex; gap:1rem; align-items:center; margin:0 0 .5rem; }
 .history-toolbar input[type=search] { flex:1 1 auto; font:inherit; padding:.55rem .75rem;
@@ -264,8 +276,46 @@ function pushPending() {
 
 function formatUsageChip(usage) {
   if (!usage) return "";
-  const total = usage.total_tokens ?? "?";
-  return `<span>${total.toLocaleString ? total.toLocaleString() : total} tok</span>`;
+  const parts = [];
+  if (usage.total_tokens != null) parts.push(`<span>${usage.total_tokens.toLocaleString()} tok</span>`);
+  if (usage.cost != null) parts.push(`<span>${formatCost(usage.cost)}</span>`);
+  return parts.join("");
+}
+
+function formatCost(cost) {
+  if (cost == null) return "—";
+  const digits = cost === 0 || Math.abs(cost) < 0.01 ? 6 : Math.abs(cost) < 1 ? 4 : 2;
+  return `$${Number(cost).toFixed(digits)}`;
+}
+
+function formatDuration(durationMs) {
+  if (durationMs == null) return "—";
+  const seconds = Number(durationMs) / 1000;
+  if (seconds < 60) return `${seconds.toFixed(1)}s`;
+  const minutes = Math.floor(seconds / 60);
+  return `${minutes}m ${(seconds % 60).toFixed(0)}s`;
+}
+
+function usageTotals(state) {
+  const usage = state?.usage || [];
+  const tokens = usage.filter(u => u.total_tokens != null).map(u => Number(u.total_tokens));
+  const costs = usage.filter(u => u.cost != null).map(u => Number(u.cost));
+  return {
+    calls: usage.length,
+    tokens: usage.length && tokens.length === usage.length ? tokens.reduce((a, b) => a + b, 0) : null,
+    cost: usage.length && costs.length === usage.length ? costs.reduce((a, b) => a + b, 0) : null,
+  };
+}
+
+function renderRunTotals(state, element) {
+  if (!element) return;
+  const totals = usageTotals(state);
+  element.innerHTML = [
+    `<li><b>Model calls:</b> ${totals.calls}</li>`,
+    `<li><b>Total tokens:</b> ${totals.tokens != null ? totals.tokens.toLocaleString() : "—"}</li>`,
+    `<li><b>Total cost:</b> ${formatCost(totals.cost)}</li>`,
+  ].join("");
+  element.classList.remove("hidden");
 }
 
 function makeFlowLi(entry) {
@@ -357,6 +407,16 @@ function renderDetails(entry) {
       u.total_tokens != null ? `${u.total_tokens.toLocaleString()} total` : null,
     ].filter(Boolean).join(" / ");
     if (parts) chips.push(`<li><b>Tokens:</b> ${parts}</li>`);
+    const detailParts = [
+      u.reasoning_tokens != null ? `${u.reasoning_tokens.toLocaleString()} reasoning` : null,
+      u.cached_input_tokens != null ? `${u.cached_input_tokens.toLocaleString()} cache read` : null,
+      u.cache_write_tokens != null ? `${u.cache_write_tokens.toLocaleString()} cache write` : null,
+    ].filter(Boolean).join(" / ");
+    if (detailParts) chips.push(`<li><b>Token details:</b> ${detailParts}</li>`);
+    chips.push(`<li><b>Cost:</b> ${formatCost(u.cost)} (${(u.cost_source || "unavailable").replaceAll("_", " ")})</li>`);
+    if (u.upstream_inference_cost != null) {
+      chips.push(`<li><b>Upstream cost:</b> ${formatCost(u.upstream_inference_cost)}</li>`);
+    }
   }
   detailsMetaEl.innerHTML = chips.join("");
   detailsContentEl.innerHTML = renderMarkdown(entry.contentMd);
@@ -510,6 +570,7 @@ _HOME_BODY = """
 <h1>Agentic Consensus</h1>
 <p class="sub">Moderator frames the problem, Agent A proposes, Agent B critiques, until consensus.</p>
 <ul class="meta" id="model-meta"></ul>
+<ul class="meta compact hidden" id="run-totals"></ul>
 
 <form id="run-form">
   <div class="field">
@@ -557,6 +618,7 @@ const roundsEl = document.getElementById("rounds");
 const runBtn = document.getElementById("run-btn");
 const statusEl = document.getElementById("status");
 const statusText = document.getElementById("status-text");
+const runTotalsEl = document.getElementById("run-totals");
 
 let pendingLi = null;    // the "Working…" placeholder awaiting the next node event
 
@@ -574,6 +636,7 @@ function resetUI() {
   layoutEl.classList.remove("hidden");
   flowListEl.innerHTML = "";
   exportsEl.classList.add("hidden");
+  runTotalsEl.classList.add("hidden");
   detailsTitleEl.textContent = "Details";
   detailsMetaEl.innerHTML = "";
   detailsContentEl.innerHTML = '<p class="empty-hint">Waiting for the first node to finish…</p>';
@@ -642,6 +705,7 @@ async function runConsensus(problem, rounds) {
         } else if (evt.type === "result") {
           if (pendingLi) { pendingLi.remove(); pendingLi = null; }
           finalState = evt.state;
+          renderRunTotals(finalState, runTotalsEl);
           exportsEl.classList.remove("hidden");
         }
       }
@@ -691,9 +755,11 @@ _HISTORY_BODY = """
       <th data-key="verdict">Verdict</th>
       <th data-key="rounds">Rounds</th>
       <th data-key="last_score">Score</th>
+      <th data-key="total_cost">Cost</th>
+      <th data-key="duration_ms">Duration</th>
     </tr>
   </thead>
-  <tbody id="runs-tbody"><tr><td colspan="5" class="empty-hint">Loading…</td></tr></tbody>
+  <tbody id="runs-tbody"><tr><td colspan="7" class="empty-hint">Loading…</td></tr></tbody>
 </table>
 """
 
@@ -717,7 +783,7 @@ function renderRunsTable() {
     });
 
   if (!rows.length) {
-    tbodyEl.innerHTML = `<tr><td colspan="5" class="empty-hint">${allRuns.length ? "No runs match your search." : "No runs yet — go run something on Home."}</td></tr>`;
+    tbodyEl.innerHTML = `<tr><td colspan="7" class="empty-hint">${allRuns.length ? "No runs match your search." : "No runs yet — go run something on Home."}</td></tr>`;
     return;
   }
 
@@ -730,6 +796,8 @@ function renderRunsTable() {
       <td><span class="badge ${verdictCls}">${VERDICT_LABELS[r.verdict] || r.verdict}</span></td>
       <td>${r.rounds ?? "?"} / ${r.max_rounds ?? "?"}</td>
       <td>${r.last_score != null ? `${r.last_score}/10` : "—"}</td>
+      <td>${formatCost(r.total_cost)}</td>
+      <td>${formatDuration(r.duration_ms)}</td>
     </tr>`;
   }).join("");
 }
@@ -766,9 +834,13 @@ HISTORY_HTML = _page(active="history", body=_HISTORY_BODY, script=_HISTORY_SCRIP
 
 _REPLAY_BODY = """
 <a class="back-link" href="/history">&larr; Back to history</a>
-<h1>Replay</h1>
-<p class="sub" id="run-subtitle">Loading…</p>
-<ul class="meta" id="run-meta"></ul>
+<div class="replay-header">
+  <div>
+    <h1>Replay</h1>
+    <p class="sub" id="run-subtitle">Loading…</p>
+  </div>
+  <ul class="meta replay-meta" id="run-meta"></ul>
+</div>
 
 <div id="error" class="error hidden"></div>
 
@@ -808,6 +880,12 @@ fetch(`/api/history/${runId}`).then(r => {
     `<li><b>Run at:</b> ${new Date(run.created_at).toLocaleString()}</li>`,
   ].join("");
   finalState = run.state;
+  const totals = usageTotals(run.state);
+  runMetaEl.innerHTML += [
+    `<li><b>Model calls:</b> ${totals.calls}</li>`,
+    `<li><b>Total tokens:</b> ${totals.tokens != null ? totals.tokens.toLocaleString() : "—"}</li>`,
+    `<li><b>Total cost:</b> ${formatCost(totals.cost)}</li>`,
+  ].join("");
   renderFlowFromEntries(buildEntriesFromState(run.state));
   layoutEl.classList.remove("hidden");
 }).catch(err => {

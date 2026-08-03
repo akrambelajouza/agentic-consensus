@@ -78,7 +78,7 @@ class ConsensusState(TypedDict, total=False):
     reviews: Annotated[list[Review], operator.add]   # full history
     verdict: Literal["consensus", "no_consensus", "stalled"]
     final_answer: str
-    usage: Annotated[list[Usage], operator.add]      # one entry per node's LLM call
+    usage: Annotated[list[Usage], operator.add]      # tokens + cost per LLM call
 ```
 
 `proposals`, `reviews`, and `usage` use additive reducers, so each round **appends**
@@ -89,14 +89,15 @@ transcript renderer (and the web UI) walks pairwise — round *N*'s proposal sit
 `proposal` (singular) is the latest one, kept separate so `agent_a` and `agent_b`
 don't have to index into the history on every call.
 
-`usage` records token accounting per node execution — `{node, role, model,
-input_tokens, output_tokens, total_tokens}` — captured from each LLM response's
-`usage_metadata`. The two structured-output nodes (`intake`, `agent_b`) call
-`with_structured_output(..., include_raw=True)` specifically to get at this, since the
-default call only returns the parsed object. Nothing in the graph or CLI reads
-`usage`; it exists for the web UI's per-node metadata display (see
-[visualization.md](visualization.md#5-web-ui)) and rides along in checkpointer
-round-trips like everything else in the state.
+`usage` records accounting per node execution: token totals, reasoning/cache token
+details, generation ID, provider-reported cost, upstream inference cost, and a cost
+source label. LangChain's normalized `usage_metadata` supplies provider-neutral token
+counts; OpenRouter's exact billed cost is merged from raw response metadata rather
+than estimated from a mutable price table. Providers that do not report cost retain
+`None` with `cost_source="unavailable"`. The two structured-output nodes (`intake`,
+`agent_b`) call `with_structured_output(..., include_raw=True)` specifically to retain
+the raw response alongside the parsed object. The data rides through graph state into
+the web UI, SQLite history, replay, and transcript exports.
 
 ## Structured verdicts
 

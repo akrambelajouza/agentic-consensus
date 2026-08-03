@@ -23,7 +23,8 @@ class HistoryDbTests(unittest.TestCase):
             "proposals": ["proposal 1"],
             "reviews": [{"approved": True, "score": 9, "critique": "ok", "required_changes": []}],
             "usage": [{"node": "intake", "role": "moderator", "model": "m", "input_tokens": 1,
-                       "output_tokens": 2, "total_tokens": 3}],
+                       "output_tokens": 2, "total_tokens": 3, "cost": 0.001,
+                       "cost_source": "provider_reported"}],
             "timings": [{"node": "intake", "duration_ms": 100}],
             "verdict": "consensus",
             "final_answer": "final",
@@ -48,6 +49,8 @@ class HistoryDbTests(unittest.TestCase):
         self.assertEqual(row["rounds"], 1)
         self.assertEqual(row["max_rounds"], 4)
         self.assertEqual(row["last_score"], 9)
+        self.assertEqual(row["total_cost"], 0.001)
+        self.assertEqual(row["duration_ms"], 100)
         self.assertEqual(row["state"]["proposals"], state["proposals"])
         self.assertEqual(row["state"]["reviews"], state["reviews"])
         self.assertEqual(row["state"]["usage"], state["usage"])
@@ -72,6 +75,16 @@ class HistoryDbTests(unittest.TestCase):
     def test_last_score_is_null_without_reviews(self) -> None:
         run_id = db.save_run("p", self._state(reviews=[]), path=self.path)
         self.assertIsNone(db.get_run(run_id, path=self.path)["last_score"])
+
+    def test_total_cost_is_null_when_provider_did_not_report_it(self) -> None:
+        state = self._state(
+            usage=[
+                {"node": "intake", "cost": 0.001},
+                {"node": "agent_a", "cost": None},
+            ]
+        )
+        run_id = db.save_run("p", state, path=self.path)
+        self.assertIsNone(db.get_run(run_id, path=self.path)["total_cost"])
 
 
 if __name__ == "__main__":

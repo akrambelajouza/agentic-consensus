@@ -138,9 +138,12 @@ uv run consensus-web                  # http://127.0.0.1:8000
 
 Submit a problem on **Home** and watch it stream live, node by node (same events the
 CLI logs to stderr, over Server-Sent Events): a flow panel on the left, and a details
-panel on the right showing each node's model, effort, duration, token usage, and
-content rendered as markdown. No auth, no external service — it's a thin transport
-around `graph.stream()`, so it reads whatever `.env` already configures. Use
+panel on the right showing each node's model, effort, duration, token usage,
+provider-reported cost, and content rendered as markdown. Completed runs also show
+total calls, tokens, and cost. OpenRouter costs come directly from its response
+rather than a local price estimate; providers that do not report cost are labelled
+unavailable. No auth, no external service — it's a thin transport around
+`graph.stream()`, so it reads whatever `.env` already configures. Use
 `--host 0.0.0.0` to expose it beyond localhost, `--port` to change the port.
 
 Every run that reaches `finalize` is saved to a local SQLite file

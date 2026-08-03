@@ -6,7 +6,7 @@ Each node takes the state and returns only the keys it changes.
 from langchain_core.messages import HumanMessage, SystemMessage
 
 from . import config, prompts
-from .models import agent_a_llm, agent_b_llm, moderator_llm
+from .models import agent_a_llm, agent_b_llm, moderator_llm, parse_spec
 from .state import ConsensusState, Criteria, Review, Usage
 
 
@@ -17,20 +17,58 @@ def _as_review(value: Review | dict) -> Review:
 
 
 def _usage(node: str, role: str, message) -> Usage:
-    """Pull token counts off a response message for the web UI's per-node metadata.
+    """Pull token and cost accounting off a response message.
 
-    ``usage_metadata`` is populated by both the Anthropic and OpenAI-compatible
-    (OpenRouter included) integrations, so this needs no provider branching. Missing
-    counts stay ``None`` rather than 0, so the UI can tell "not reported" from "free".
+    LangChain's normalized ``usage_metadata`` provides provider-neutral token counts.
+    OpenRouter's exact billed cost remains in the raw ``token_usage`` response
+    metadata, so merge both views rather than estimating cost from a price table.
+    Missing values stay ``None`` so the UI can distinguish "not reported" from zero.
     """
     meta = getattr(message, "usage_metadata", None) or {}
+    response_meta = getattr(message, "response_metadata", None) or {}
+    raw = response_meta.get("token_usage") or {}
+    input_details = meta.get("input_token_details") or {}
+    output_details = meta.get("output_token_details") or {}
+    prompt_details = raw.get("prompt_tokens_details") or {}
+    completion_details = raw.get("completion_tokens_details") or {}
+    cost_details = raw.get("cost_details") or {}
+    spec = config.model_spec(role)
+    provider, _ = parse_spec(spec)
+
+    def first(*values):
+        return next((value for value in values if value is not None), None)
+
+    cost = raw.get("cost")
     return Usage(
         node=node,
         role=role,
-        model=config.model_spec(role),
+        provider=provider,
+        model=spec,
+        generation_id=response_meta.get("id"),
         input_tokens=meta.get("input_tokens"),
         output_tokens=meta.get("output_tokens"),
         total_tokens=meta.get("total_tokens"),
+        reasoning_tokens=first(
+            output_details.get("reasoning"),
+            output_details.get("priority_reasoning"),
+            output_details.get("flex_reasoning"),
+            completion_details.get("reasoning_tokens"),
+        ),
+        cached_input_tokens=first(
+            input_details.get("cache_read"),
+            input_details.get("priority_cache_read"),
+            input_details.get("flex_cache_read"),
+            prompt_details.get("cached_tokens"),
+        ),
+        cache_write_tokens=first(
+            input_details.get("cache_creation"),
+            input_details.get("priority_cache_creation"),
+            input_details.get("flex_cache_creation"),
+            prompt_details.get("cache_write_tokens"),
+        ),
+        cost=cost,
+        upstream_inference_cost=cost_details.get("upstream_inference_cost"),
+        cost_source="provider_reported" if cost is not None else "unavailable",
     )
 
 
