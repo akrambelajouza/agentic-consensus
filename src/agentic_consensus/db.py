@@ -1,7 +1,7 @@
 """Run history: SQLite persistence for completed runs.
 
-Only the web UI writes here (``web.py`` calls ``save_run`` once a run reaches
-``finalize``); the CLI and Studio are unaffected. Every function opens its own
+Only the web UI writes here (``web.py`` calls ``save_run`` once a graph completes);
+the CLI and Studio are unaffected. Every function opens its own
 short-lived connection rather than sharing one across threads — the web worker
 thread writes while request handlers read concurrently, and stdlib ``sqlite3``
 connections aren't safe to share across threads by default. SQLite's own
@@ -23,11 +23,14 @@ from datetime import datetime, timezone
 from typing import Any
 
 from . import config
+from .variants.registry import DEFAULT_VARIANT
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS runs (
     id               INTEGER PRIMARY KEY AUTOINCREMENT,
     created_at       TEXT NOT NULL,
+    variant          TEXT NOT NULL DEFAULT 'v1-moderated-criteria',
+    variant_version  INTEGER NOT NULL DEFAULT 1,
     problem          TEXT NOT NULL,
     restated_problem TEXT,
     verdict          TEXT NOT NULL,
@@ -35,6 +38,7 @@ CREATE TABLE IF NOT EXISTS runs (
     max_rounds       INTEGER,
     last_score       INTEGER,
     total_cost       REAL,
+    total_tokens     INTEGER,
     duration_ms      INTEGER,
     state_json       TEXT NOT NULL
 );
@@ -44,6 +48,8 @@ CREATE INDEX IF NOT EXISTS idx_runs_created_at ON runs(created_at DESC);
 _SUMMARY_COLUMNS = (
     "id",
     "created_at",
+    "variant",
+    "variant_version",
     "problem",
     "restated_problem",
     "verdict",
@@ -51,6 +57,7 @@ _SUMMARY_COLUMNS = (
     "max_rounds",
     "last_score",
     "total_cost",
+    "total_tokens",
     "duration_ms",
 )
 
@@ -70,6 +77,17 @@ def init_db(path: str | None = None) -> None:
             conn.execute("ALTER TABLE runs ADD COLUMN total_cost REAL")
         if "duration_ms" not in columns:
             conn.execute("ALTER TABLE runs ADD COLUMN duration_ms INTEGER")
+        if "variant" not in columns:
+            conn.execute(
+                "ALTER TABLE runs ADD COLUMN variant TEXT NOT NULL "
+                "DEFAULT 'v1-moderated-criteria'"
+            )
+        if "variant_version" not in columns:
+            conn.execute(
+                "ALTER TABLE runs ADD COLUMN variant_version INTEGER NOT NULL DEFAULT 1"
+            )
+        if "total_tokens" not in columns:
+            conn.execute("ALTER TABLE runs ADD COLUMN total_tokens INTEGER")
         # Older rows already contain per-node timings inside state_json. Backfill the
         # new summary column so History can show duration without requiring new runs.
         for row in conn.execute(
@@ -90,16 +108,35 @@ def init_db(path: str | None = None) -> None:
                     "UPDATE runs SET duration_ms = ? WHERE id = ?",
                     (duration_ms, row["id"]),
                 )
+        for row in conn.execute(
+            "SELECT id, state_json FROM runs WHERE total_tokens IS NULL"
+        ):
+            try:
+                usage = json.loads(row["state_json"]).get("usage") or []
+                tokens = [
+                    item.get("total_tokens")
+                    for item in usage
+                    if item.get("total_tokens") is not None
+                ]
+                total_tokens = (
+                    sum(tokens) if usage and len(tokens) == len(usage) else None
+                )
+            except (json.JSONDecodeError, TypeError):
+                continue
+            if total_tokens is not None:
+                conn.execute(
+                    "UPDATE runs SET total_tokens = ? WHERE id = ?",
+                    (total_tokens, row["id"]),
+                )
 
 
 def save_run(problem: str, state: dict[str, Any], *, path: str | None = None) -> int:
     """Persist a completed run. Returns the new row's id.
 
-    ``state`` must already carry a ``verdict`` — that's only true once a run has
-    reached ``finalize``, which is the "only persist completed runs" rule enforced
-    by construction at the call site (``web.py``'s worker only calls this after
-    ``graph.stream(...)`` finishes without raising). Raising here instead of
-    silently writing a partial row keeps that guarantee from rotting silently.
+    ``state`` must already carry a ``verdict`` — both variants set one only when the
+    graph has finished. The web worker calls this after ``graph.stream(...)`` returns
+    without raising. Raising here instead of silently writing a partial row keeps
+    that guarantee from rotting silently.
     """
     if "verdict" not in state:
         raise ValueError("save_run requires a completed state (missing 'verdict')")
@@ -113,6 +150,12 @@ def save_run(problem: str, state: dict[str, Any], *, path: str | None = None) ->
         if u.get("cost") is not None
     ]
     total_cost = sum(costs) if usage and len(costs) == len(usage) else None
+    tokens = [
+        item.get("total_tokens")
+        for item in usage
+        if item.get("total_tokens") is not None
+    ]
+    total_tokens = sum(tokens) if usage and len(tokens) == len(usage) else None
     timings = state.get("timings") or []
     duration_ms = (
         sum(timing["duration_ms"] for timing in timings)
@@ -128,12 +171,15 @@ def save_run(problem: str, state: dict[str, Any], *, path: str | None = None) ->
         cur = conn.execute(
             """
             INSERT INTO runs
-                (created_at, problem, restated_problem, verdict, rounds, max_rounds,
-                 last_score, total_cost, duration_ms, state_json)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                (created_at, variant, variant_version, problem, restated_problem,
+                 verdict, rounds, max_rounds, last_score, total_cost, total_tokens,
+                 duration_ms, state_json)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 created_at,
+                state.get("variant", DEFAULT_VARIANT),
+                state.get("variant_version", 1),
                 problem,
                 state.get("restated_problem"),
                 state["verdict"],
@@ -141,6 +187,7 @@ def save_run(problem: str, state: dict[str, Any], *, path: str | None = None) ->
                 state.get("max_rounds"),
                 last_score,
                 total_cost,
+                total_tokens,
                 duration_ms,
                 json.dumps(state),
             ),

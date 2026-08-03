@@ -1,6 +1,6 @@
 # Architecture
 
-## The graph
+## V1 — Moderated criteria
 
 ```mermaid
 flowchart TD
@@ -18,7 +18,23 @@ flowchart TD
 Four nodes, one cycle. The cycle is `agent_a → agent_b → agent_a`, and everything
 interesting is in when it exits.
 
-## Roles
+## V2 — Post-hoc reviewer
+
+```mermaid
+flowchart TD
+    START([start]) --> agent_a
+    agent_a["agent_a<br/><i>author</i><br/>problem → proposal"] --> agent_b
+    agent_b["agent_b<br/><i>reviewer</i><br/>derive criteria + review"] --> route{route}
+    route -->|not approved,<br/>rounds left| agent_a
+    route -->|approved / limit / stalled| END([end])
+```
+
+V2 has two model-calling nodes. Agent B returns `PostHocReview`, which extends the
+normal review with `criteria`. Those criteria are appended to `criteria_history` on
+every round. Agent B also sets the terminal verdict; there is no intake or finalizer
+call, and the latest Agent A proposal becomes the final answer.
+
+## V1 roles
 
 | Node | Role | Returns | Notes |
 | --- | --- | --- | --- |
@@ -143,12 +159,16 @@ placeholder text like "N/A" that the model has to interpret.
 
 ```
 src/agentic_consensus/
+├── variants/
+│   ├── registry.py               public IDs and graph factories
+│   ├── v1_moderated_criteria/    V1 graph, nodes, prompts, state
+│   └── v2_posthoc_reviewer/      V2 graph, nodes, prompts, state
 ├── config.py      every tunable, read from the environment
-├── state.py       ConsensusState, Criteria, Review, Usage
+├── state.py       backward-compatible V1 state exports
+├── schemas.py     Review / Usage / Verdict shared by variants
 ├── models.py      provider-agnostic model factories
-├── prompts.py     the system prompts
-├── nodes.py       intake / agent_a / agent_b / finalize
-├── graph.py       wiring + route(), exports `graph`
+├── usage.py       shared token and provider-cost accounting
+├── graph.py       backward-compatible default V1 graph export
 ├── transcript.py  markdown / HTML / JSON renderers
 ├── __main__.py    CLI runner
 ├── web.py         FastAPI app (`--extra web`): routes, worker thread, persistence

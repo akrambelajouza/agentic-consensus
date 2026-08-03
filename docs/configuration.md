@@ -132,8 +132,8 @@ uv run langgraph dev --studio-url https://eu.smith.langchain.com
 | `CONSENSUS_DB_PATH` | `consensus.db` | SQLite file the web UI persists completed runs to |
 
 Only `consensus-web` reads this — the CLI, Studio, and library never write here.
-Every run that reaches `finalize` (any verdict) is saved automatically; a run that
-errors mid-way is not. Browse past runs on the web UI's History page.
+Every graph that completes with a verdict is saved automatically; a run that errors
+mid-way is not. Browse past runs on the web UI's History page.
 
 ## Bad values fail loudly
 
@@ -185,8 +185,8 @@ with `monkeypatch.setenv` without reimporting the package.
 
 ## Tuning the prompts
 
-Prompts are the one thing still in source, in `prompts.py` — they're prose, not
-settings. In rough order of how much leverage they give you:
+Prompts are the one thing still in source, under each named variant directory —
+they're prose, not settings. For V1, in rough order of leverage:
 
 1. **`MODERATOR_INTAKE`** — the highest-leverage prompt in the project. If criteria
    come out vague, nothing downstream can save the run. Add domain-specific guidance

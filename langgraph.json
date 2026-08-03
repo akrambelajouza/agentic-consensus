@@ -1,7 +1,8 @@
 {
   "dependencies": ["."],
   "graphs": {
-    "consensus": "agentic_consensus.graph:graph"
+    "v1-moderated-criteria": "agentic_consensus.variants.v1_moderated_criteria.graph:graph",
+    "v2-posthoc-reviewer": "agentic_consensus.variants.v2_posthoc_reviewer.graph:graph"
   },
   "env": ".env"
 }

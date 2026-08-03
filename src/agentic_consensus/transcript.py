@@ -19,7 +19,8 @@ import json
 from typing import Any
 
 from .models import active_models
-from .state import ConsensusState, Review, Usage
+from .schemas import Review, Usage
+from .state import ConsensusState
 
 VERDICT_LABELS = {
     "consensus": "Consensus reached",
@@ -29,7 +30,20 @@ VERDICT_LABELS = {
 
 
 def _as_review(value: Review | dict) -> Review:
-    return value if isinstance(value, Review) else Review.model_validate(value)
+    if isinstance(value, Review):
+        return value
+    if "criteria" in value:
+        from .variants.v2_posthoc_reviewer.state import PostHocReview
+
+        return PostHocReview.model_validate(value)
+    return Review.model_validate(value)
+
+
+def _models_for(state: ConsensusState) -> dict[str, str]:
+    models = active_models()
+    if state.get("variant") == "v2-posthoc-reviewer":
+        return {key: models[key] for key in ("agent_a", "agent_b")}
+    return models
 
 
 def _rounds(state: ConsensusState) -> list[tuple[int, str, Review | None]]:
@@ -74,7 +88,9 @@ def summary(state: ConsensusState) -> dict[str, Any]:
         "scores": [r.score for r in reviews],
         "approved": bool(reviews and reviews[-1].approved),
         "criteria": list(state.get("criteria") or []),
-        "models": active_models(),
+        "variant": state.get("variant", "v1-moderated-criteria"),
+        "variant_version": state.get("variant_version", 1),
+        "models": _models_for(state),
         "model_calls": len(usage),
         "total_tokens": total_tokens,
         "total_cost": total_cost,
@@ -84,16 +100,24 @@ def summary(state: ConsensusState) -> dict[str, Any]:
 
 def render_markdown(state: ConsensusState) -> str:
     """Full transcript as Markdown."""
-    models = active_models()
+    models = _models_for(state)
     verdict = state.get("verdict") or "unknown"
     reviews = [_as_review(r) for r in state.get("reviews") or []]
     scores = " → ".join(f"{r.score}/10" for r in reviews) or "—"
     usage, total_tokens, total_cost = _usage_summary(state)
+    role_rows = []
+    if "moderator" in models:
+        role_rows.append(f"| Moderator | `{models['moderator']}` |")
+    role_rows += [
+        f"| Agent A (author) | `{models['agent_a']}` |",
+        f"| Agent B (reviewer) | `{models['agent_b']}` |",
+    ]
 
     out: list[str] = [
         "# Consensus run",
         "",
         f"**Outcome:** {VERDICT_LABELS.get(verdict, verdict)}  ",
+        f"**Variant:** {state.get('variant', 'v1-moderated-criteria')}  ",
         f"**Rounds:** {state.get('round', '?')} of {state.get('max_rounds', '?')}  ",
         f"**Score trend:** {scores}",
         f"**Model calls:** {len(usage)}  ",
@@ -106,9 +130,7 @@ def render_markdown(state: ConsensusState) -> str:
         "",
         "| Role | Model |",
         "| --- | --- |",
-        f"| Moderator | `{models['moderator']}` |",
-        f"| Agent A (author) | `{models['agent_a']}` |",
-        f"| Agent B (reviewer) | `{models['agent_b']}` |",
+        *role_rows,
         "",
         "## Problem",
         "",
@@ -126,6 +148,11 @@ def render_markdown(state: ConsensusState) -> str:
             out += ["_Not reviewed._", ""]
             continue
         badge = "APPROVED" if review.approved else "CHANGES REQUESTED"
+        criteria = getattr(review, "criteria", None)
+        if criteria:
+            out += ["**Agent B's post-hoc criteria:**", ""]
+            out += [f"{i}. {criterion}" for i, criterion in enumerate(criteria, 1)]
+            out += [""]
         out += [
             f"**Agent B — {badge} ({review.score}/10):**",
             "",
@@ -193,7 +220,7 @@ def render_html(state: ConsensusState, *, title: str = "Consensus run") -> str:
     No external assets, so it opens straight from disk and survives being emailed
     around. Rounds are collapsible; the last one starts open.
     """
-    models = active_models()
+    models = _models_for(state)
     verdict = state.get("verdict") or "unknown"
     reviews = [_as_review(r) for r in state.get("reviews") or []]
     rounds = _rounds(state)
@@ -201,6 +228,7 @@ def render_html(state: ConsensusState, *, title: str = "Consensus run") -> str:
 
     meta = [
         f"<li><b>Outcome:</b> {_esc(VERDICT_LABELS.get(verdict, verdict))}</li>",
+        f"<li><b>Variant:</b> {_esc(state.get('variant', 'v1-moderated-criteria'))}</li>",
         f"<li><b>Rounds:</b> {_esc(str(state.get('round', '?')))}"
         f" of {_esc(str(state.get('max_rounds', '?')))}</li>",
         "<li><b>Scores:</b> "
@@ -208,7 +236,6 @@ def render_html(state: ConsensusState, *, title: str = "Consensus run") -> str:
         + "</li>",
         f"<li><b>Author:</b> <code>{_esc(models['agent_a'])}</code></li>",
         f"<li><b>Reviewer:</b> <code>{_esc(models['agent_b'])}</code></li>",
-        f"<li><b>Moderator:</b> <code>{_esc(models['moderator'])}</code></li>",
         f"<li><b>Model calls:</b> {len(usage)}</li>",
         (
             f"<li><b>Total tokens:</b> {total_tokens:,}</li>"
@@ -217,6 +244,8 @@ def render_html(state: ConsensusState, *, title: str = "Consensus run") -> str:
         ),
         f"<li><b>Total cost:</b> {_esc(_format_cost(total_cost))}</li>",
     ]
+    if "moderator" in models:
+        meta.insert(6, f"<li><b>Moderator:</b> <code>{_esc(models['moderator'])}</code></li>")
 
     criteria = "".join(
         f"<li>{_esc(c)}</li>" for c in (state.get("criteria") or [])
@@ -237,12 +266,20 @@ def render_html(state: ConsensusState, *, title: str = "Consensus run") -> str:
                 f'<span class="badge {cls}">{review.score}/10</span>'
             )
             changes = ""
+            posthoc_criteria = ""
+            review_criteria = getattr(review, "criteria", None)
+            if review_criteria:
+                items = "".join(f"<li>{_esc(c)}</li>" for c in review_criteria)
+                posthoc_criteria = (
+                    '<div class="who">Agent B post-hoc criteria</div>'
+                    f'<ol class="criteria">{items}</ol>'
+                )
             if review.required_changes:
                 items = "".join(f"<li>{_esc(c)}</li>" for c in review.required_changes)
                 changes = f'<div class="who">Required changes</div><ul class="changes">{items}</ul>'
             review_html = (
                 f'<div class="who">Agent B &mdash; reviewer</div>'
-                f"<pre>{_esc(review.critique)}</pre>{changes}"
+                f"{posthoc_criteria}<pre>{_esc(review.critique)}</pre>{changes}"
             )
 
         blocks.append(

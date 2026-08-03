@@ -1,13 +1,12 @@
 # Documentation
 
-A three-agent LangGraph loop. A **Moderator** turns a problem into checkable
-acceptance criteria, **Agent A** proposes a solution, **Agent B** grades it against
-those criteria, and rejected proposals go back to A with the critique attached — until
-B approves or a stopping rule fires.
+Two named LangGraph workflows explore when evaluation criteria should be created:
+V1 commits to them before the answer, while V2 derives them after seeing the answer.
 
 | Page | What's in it |
 | --- | --- |
 | [architecture.md](architecture.md) | The graph, the state, the routing rules, why the moderator isn't the router |
+| [variants.md](variants.md) | V1 versus V2 topology, criteria timing, selection, and cost shape |
 | [configuration.md](configuration.md) | Every `.env` variable: rounds, stall guard, models, token budgets, effort |
 | [providers.md](providers.md) | Anthropic, OpenAI and OpenRouter; mixing vendors across roles |
 | [visualization.md](visualization.md) | Watching a run, the web UI, and exporting a shareable transcript |
@@ -29,6 +28,8 @@ Run it from the terminal and get an HTML transcript:
 ```bash
 uv run consensus "Design a rate limiter for a multi-tenant API" --out runs/limiter
 ```
+
+Add `--variant v2-posthoc-reviewer` to run the answer-first V2 graph.
 
 Or run it interactively in LangGraph Studio:
 
@@ -54,13 +55,9 @@ result["final_answer"]
 result["reviews"]        # every critique, in order
 ```
 
-## The one thing worth knowing up front
+## The experiment worth knowing up front
 
-The quality of this loop is set almost entirely by the **acceptance criteria** the
-moderator writes at intake. Criteria like *"handles concurrent writes without lost
-updates"* give Agent B something to actually decide. Criteria like *"is well
-designed"* give it nothing, and the loop either rubber-stamps round 1 or grinds to
-`no_consensus` on vibes.
-
-If a run goes wrong, read the criteria first. It is the fix far more often than the
-author or reviewer prompt is.
+V1's criteria are independent of the proposal but require moderator calls. V2 is
+cheaper, but its criteria may be anchored to what Agent A chose to discuss. V2 keeps
+each round's rubric in `criteria_history` so that later comparison can measure this
+rather than relying on impressions.

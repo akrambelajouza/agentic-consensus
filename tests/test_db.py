@@ -1,4 +1,6 @@
 import os
+import json
+import sqlite3
 import tempfile
 import unittest
 
@@ -51,6 +53,9 @@ class HistoryDbTests(unittest.TestCase):
         self.assertEqual(row["last_score"], 9)
         self.assertEqual(row["total_cost"], 0.001)
         self.assertEqual(row["duration_ms"], 100)
+        self.assertEqual(row["variant"], "v1-moderated-criteria")
+        self.assertEqual(row["variant_version"], 1)
+        self.assertEqual(row["total_tokens"], 3)
         self.assertEqual(row["state"]["proposals"], state["proposals"])
         self.assertEqual(row["state"]["reviews"], state["reviews"])
         self.assertEqual(row["state"]["usage"], state["usage"])
@@ -85,6 +90,50 @@ class HistoryDbTests(unittest.TestCase):
         )
         run_id = db.save_run("p", state, path=self.path)
         self.assertIsNone(db.get_run(run_id, path=self.path)["total_cost"])
+
+    def test_migrates_legacy_row_to_v1_and_backfills_summaries(self) -> None:
+        fd, legacy_path = tempfile.mkstemp(suffix=".db")
+        os.close(fd)
+        state = {
+            "usage": [{"total_tokens": 7}, {"total_tokens": 11}],
+            "timings": [{"duration_ms": 20}, {"duration_ms": 30}],
+        }
+        try:
+            with sqlite3.connect(legacy_path) as conn:
+                conn.executescript(
+                    """
+                    CREATE TABLE runs (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        created_at TEXT NOT NULL,
+                        problem TEXT NOT NULL,
+                        restated_problem TEXT,
+                        verdict TEXT NOT NULL,
+                        rounds INTEGER,
+                        max_rounds INTEGER,
+                        last_score INTEGER,
+                        state_json TEXT NOT NULL
+                    );
+                    """
+                )
+                conn.execute(
+                    "INSERT INTO runs (created_at, problem, verdict, state_json) "
+                    "VALUES (?, ?, ?, ?)",
+                    (
+                        "2026-01-01T00:00:00+00:00",
+                        "legacy",
+                        "consensus",
+                        json.dumps(state),
+                    ),
+                )
+
+            db.init_db(legacy_path)
+            row = db.list_runs(path=legacy_path)[0]
+            self.assertEqual(row["variant"], "v1-moderated-criteria")
+            self.assertEqual(row["variant_version"], 1)
+            self.assertEqual(row["total_tokens"], 18)
+            self.assertEqual(row["duration_ms"], 50)
+        finally:
+            os.remove(legacy_path)
 
 
 if __name__ == "__main__":

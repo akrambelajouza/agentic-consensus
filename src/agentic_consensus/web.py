@@ -30,9 +30,9 @@ from fastapi.responses import HTMLResponse, JSONResponse, Response, StreamingRes
 from pydantic import BaseModel
 
 from . import config, db
-from .graph import build_graph
-from .state import Review, Usage
+from .schemas import Review, Usage
 from .transcript import render_html, render_json, render_markdown
+from .variants.registry import DEFAULT_VARIANT, VARIANTS, get_variant
 from .web_templates import HISTORY_HTML, INDEX_HTML, REPLAY_HTML
 
 
@@ -48,6 +48,7 @@ app = FastAPI(title="Agentic Consensus", lifespan=_lifespan)
 class RunRequest(BaseModel):
     problem: str
     rounds: int | None = None
+    variant: str = DEFAULT_VARIANT
 
 
 class ExportRequest(BaseModel):
@@ -71,7 +72,7 @@ def _sse(payload: dict[str, Any]) -> str:
     return f"data: {json.dumps(payload)}\n\n"
 
 
-def _run_events(problem: str, rounds: int | None) -> Iterator[str]:
+def _run_events(problem: str, rounds: int | None, variant_id: str) -> Iterator[str]:
     """Run the graph in a worker thread, yielding one SSE message per queued event.
 
     The generator itself stays synchronous and blocking-on-queue, which is fine here:
@@ -84,11 +85,21 @@ def _run_events(problem: str, rounds: int | None) -> Iterator[str]:
         try:
             cfg = config.settings()
             effective_rounds = rounds if rounds is not None else cfg["max_rounds"]
-            graph = build_graph()
-            state: dict[str, Any] = {}
+            variant = get_variant(variant_id)
+            graph = variant.build_graph()
+            state: dict[str, Any] = {
+                "problem": problem,
+                "variant": variant.id,
+                "variant_version": variant.version,
+            }
             last_ts = time.perf_counter()
             for chunk in graph.stream(
-                {"problem": problem, "max_rounds": effective_rounds},
+                {
+                    "problem": problem,
+                    "variant": variant.id,
+                    "variant_version": variant.version,
+                    "max_rounds": effective_rounds,
+                },
                 stream_mode="updates",
             ):
                 for node, update in chunk.items():
@@ -100,7 +111,12 @@ def _run_events(problem: str, rounds: int | None) -> Iterator[str]:
                         {
                             k: (
                                 state.get(k, []) + v
-                                if k in ("proposals", "reviews", "usage")
+                                if k in (
+                                    "proposals",
+                                    "reviews",
+                                    "criteria_history",
+                                    "usage",
+                                )
                                 else v
                             )
                             for k, v in update.items()
@@ -172,7 +188,18 @@ def api_get_history(run_id: int) -> Response:
 @app.get("/api/config")
 def get_config() -> JSONResponse:
     try:
-        return JSONResponse(config.settings())
+        payload = config.settings()
+        payload["default_variant"] = DEFAULT_VARIANT
+        payload["variants"] = [
+            {
+                "id": variant.id,
+                "version": variant.version,
+                "label": variant.label,
+                "description": variant.description,
+            }
+            for variant in VARIANTS.values()
+        ]
+        return JSONResponse(payload)
     except ValueError as exc:
         return JSONResponse({"error": str(exc)}, status_code=500)
 
@@ -186,7 +213,7 @@ def run(req: RunRequest) -> StreamingResponse:
             media_type="text/event-stream",
         )
     return StreamingResponse(
-        _run_events(problem, req.rounds), media_type="text/event-stream"
+        _run_events(problem, req.rounds, req.variant), media_type="text/event-stream"
     )
 
 

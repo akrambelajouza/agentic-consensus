@@ -54,8 +54,9 @@ label { display:block; font-size:.85rem; font-weight:600; margin:0 0 .35rem; }
 .row { display:flex; gap:1rem; align-items:flex-end; flex-wrap:wrap; }
 .row .field { flex:1 1 auto; margin:0; }
 .row .field.narrow { flex:0 0 8rem; }
-input[type=number] { width:100%; font:inherit; padding:.6rem .75rem; background:var(--card);
-                      color:var(--fg); border:1px solid var(--line); border-radius:8px; }
+input[type=number], select { width:100%; font:inherit; padding:.6rem .75rem;
+                      background:var(--card); color:var(--fg); border:1px solid var(--line);
+                      border-radius:8px; }
 button { font:inherit; font-weight:600; padding:.7rem 1.4rem; border-radius:8px; border:none;
          background:var(--accent); color:#fff; cursor:pointer; }
 button:disabled { opacity:.5; cursor:default; }
@@ -75,7 +76,7 @@ button.ghost { background:transparent; color:var(--accent); border:1px solid var
 pre { white-space:pre-wrap; word-wrap:break-word; background:var(--bg);
       border:1px solid var(--line); border-radius:8px; padding:.85rem;
       margin:.6em 0; font:13.5px/1.55 ui-monospace,SFMono-Regular,Menlo,monospace; }
-.hidden { display:none; }
+.hidden { display:none !important; }
 
 .topnav { display:flex; justify-content:space-between; align-items:center;
           margin:0 0 1.75rem; padding-bottom:1rem; border-bottom:1px solid var(--line); }
@@ -191,6 +192,10 @@ const VERDICT_LABELS = {
   stalled: "No consensus — review stalled",
 };
 const ROLE_LABELS = { moderator: "Moderator", agent_a: "Agent A — author", agent_b: "Agent B — reviewer" };
+const VARIANT_LABELS = {
+  "v1-moderated-criteria": "V1 — Moderated criteria",
+  "v2-posthoc-reviewer": "V2 — Post-hoc reviewer",
+};
 
 const errorEl = document.getElementById("error");
 const layoutEl = document.getElementById("layout");
@@ -366,11 +371,16 @@ function buildEntry(node, update, duration_ms) {
     const review = update.reviews[update.reviews.length - 1];
     const cls = review.approved ? "ok" : "warn";
     const badgeHtml = `<span class="badge ${cls}">${review.approved ? "APPROVED" : "CHANGES"}</span><span class="badge ${cls}">${review.score}/10</span>`;
-    let md = `**Critique**\n\n${review.critique}`;
+    let md = "";
+    if (review.criteria && review.criteria.length) {
+      md += `**Post-hoc criteria**\n\n` + review.criteria.map((c, i) => `${i + 1}. ${c}`).join("\n") + "\n\n";
+    }
+    md += `**Critique**\n\n${review.critique}`;
     if (review.required_changes && review.required_changes.length) {
       md += `\n\n**Required changes**\n\n` + review.required_changes.map(c => `- ${c}`).join("\n");
     }
-    return { ...base, id: `agent_b-${currentRound}`, roleKey: "agent_b", label: `Agent B · Round ${currentRound}`, badgeHtml, contentMd: md };
+    const outcome = update.verdict ? `<span class="badge ${update.verdict === "consensus" ? "ok" : "warn"}">${VERDICT_LABELS[update.verdict]}</span>` : "";
+    return { ...base, id: `agent_b-${currentRound}`, roleKey: "agent_b", label: `Agent B · Round ${currentRound}`, badgeHtml: badgeHtml + outcome, contentMd: md };
   }
   // finalize
   const cls = update.verdict === "consensus" ? "ok" : "warn";
@@ -455,11 +465,14 @@ function buildEntriesFromState(state) {
   };
 
   const entries = [];
-  entries.push(buildEntry("intake", {
-    restated_problem: state.restated_problem,
-    criteria: state.criteria || [],
-    usage: takeUsage("intake"),
-  }, takeDuration("intake")));
+  const isPostHoc = state.variant === "v2-posthoc-reviewer";
+  if (!isPostHoc) {
+    entries.push(buildEntry("intake", {
+      restated_problem: state.restated_problem,
+      criteria: state.criteria || [],
+      usage: takeUsage("intake"),
+    }, takeDuration("intake")));
+  }
 
   const proposals = state.proposals || [];
   const reviews = state.reviews || [];
@@ -473,16 +486,19 @@ function buildEntriesFromState(state) {
     if (i < reviews.length) {
       entries.push(buildEntry("agent_b", {
         reviews: reviews.slice(0, i + 1),
+        verdict: isPostHoc && i === reviews.length - 1 ? state.verdict : null,
         usage: takeUsage("agent_b"),
       }, takeDuration("agent_b")));
     }
   }
 
-  entries.push(buildEntry("finalize", {
-    verdict: state.verdict,
-    final_answer: state.final_answer,
-    usage: takeUsage("finalize"),
-  }, takeDuration("finalize")));
+  if (!isPostHoc) {
+    entries.push(buildEntry("finalize", {
+      verdict: state.verdict,
+      final_answer: state.final_answer,
+      usage: takeUsage("finalize"),
+    }, takeDuration("finalize")));
+  }
 
   return entries;
 }
@@ -568,7 +584,7 @@ def _page(*, active: str, body: str, script: str) -> str:
 
 _HOME_BODY = """
 <h1>Agentic Consensus</h1>
-<p class="sub">Moderator frames the problem, Agent A proposes, Agent B critiques, until consensus.</p>
+<p class="sub">Run and inspect alternative author/reviewer workflow designs.</p>
 <ul class="meta" id="model-meta"></ul>
 <ul class="meta compact hidden" id="run-totals"></ul>
 
@@ -578,6 +594,10 @@ _HOME_BODY = """
     <textarea id="problem" placeholder="Design a rate limiter for a multi-tenant API&#10;&#10;(Cmd/Ctrl+Enter to run)" required></textarea>
   </div>
   <div class="row">
+    <div class="field" style="min-width:18rem;">
+      <label for="variant">Workflow variant</label>
+      <select id="variant"></select>
+    </div>
     <div class="field narrow">
       <label for="rounds">Max rounds</label>
       <input type="number" id="rounds" min="1" placeholder="default">
@@ -615,6 +635,7 @@ _HOME_SCRIPT = r"""
 const form = document.getElementById("run-form");
 const problemEl = document.getElementById("problem");
 const roundsEl = document.getElementById("rounds");
+const variantEl = document.getElementById("variant");
 const runBtn = document.getElementById("run-btn");
 const statusEl = document.getElementById("status");
 const statusText = document.getElementById("status-text");
@@ -623,11 +644,20 @@ const runTotalsEl = document.getElementById("run-totals");
 let pendingLi = null;    // the "Working…" placeholder awaiting the next node event
 
 function onConfigLoaded(cfg) {
+  variantEl.innerHTML = cfg.variants.map(v =>
+    `<option value="${v.id}">${v.label}</option>`
+  ).join("");
+  variantEl.value = cfg.default_variant;
+  const paintModels = () => {
   const meta = document.getElementById("model-meta");
-  const rows = [["Moderator", cfg.roles.moderator], ["Author", cfg.roles.agent_a], ["Reviewer", cfg.roles.agent_b]];
+  const rows = [["Author", cfg.roles.agent_a], ["Reviewer", cfg.roles.agent_b]];
+  if (variantEl.value === "v1-moderated-criteria") rows.unshift(["Moderator", cfg.roles.moderator]);
   meta.innerHTML = rows.map(([label, r]) =>
     `<li><b>${label}:</b> <code>${r.model}</code> (${r.effort})</li>`
-  ).join("") + `<li><b>Max rounds:</b> ${cfg.max_rounds}</li>`;
+  ).join("") + `<li><b>Variant:</b> ${VARIANT_LABELS[variantEl.value]}</li><li><b>Max rounds:</b> ${cfg.max_rounds}</li>`;
+  };
+  variantEl.addEventListener("change", paintModels);
+  paintModels();
   roundsEl.placeholder = `default ${cfg.max_rounds}`;
 }
 
@@ -647,7 +677,7 @@ function resetUI() {
   pendingLi = pushPending();
 }
 
-async function runConsensus(problem, rounds) {
+async function runConsensus(problem, rounds, variant) {
   resetUI();
   runBtn.disabled = true;
   statusEl.classList.remove("hidden");
@@ -657,7 +687,7 @@ async function runConsensus(problem, rounds) {
     const resp = await fetch("/api/run", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ problem, rounds }),
+      body: JSON.stringify({ problem, rounds, variant }),
     });
     const reader = resp.body.getReader();
     const decoder = new TextDecoder();
@@ -696,12 +726,14 @@ async function runConsensus(problem, rounds) {
           } else if (node === "agent_b") {
             const review = update.reviews[update.reviews.length - 1];
             const mark = review.approved ? "APPROVED" : "changes requested";
-            statusText.textContent = `Round ${currentRound}: Agent B — ${mark} (${review.score}/10)`;
+            statusText.textContent = update.verdict
+              ? (VERDICT_LABELS[update.verdict] || update.verdict)
+              : `Round ${currentRound}: Agent B — ${mark} (${review.score}/10)`;
           } else if (node === "finalize") {
             statusText.textContent = VERDICT_LABELS[update.verdict] || update.verdict;
           }
 
-          pendingLi = node === "finalize" ? null : pushPending();
+          pendingLi = node === "finalize" || update.verdict ? null : pushPending();
         } else if (evt.type === "result") {
           if (pendingLi) { pendingLi.remove(); pendingLi = null; }
           finalState = evt.state;
@@ -725,7 +757,7 @@ form.addEventListener("submit", (e) => {
   const problem = problemEl.value.trim();
   if (!problem) return;
   const rounds = roundsEl.value ? parseInt(roundsEl.value, 10) : null;
-  runConsensus(problem, rounds);
+  runConsensus(problem, rounds, variantEl.value);
 });
 
 problemEl.addEventListener("keydown", (e) => {
@@ -751,15 +783,17 @@ _HISTORY_BODY = """
   <thead>
     <tr>
       <th data-key="created_at">Timestamp</th>
+      <th data-key="variant">Variant</th>
       <th data-key="problem">Problem</th>
       <th data-key="verdict">Verdict</th>
       <th data-key="rounds">Rounds</th>
       <th data-key="last_score">Score</th>
       <th data-key="total_cost">Cost</th>
+      <th data-key="total_tokens">Tokens</th>
       <th data-key="duration_ms">Duration</th>
     </tr>
   </thead>
-  <tbody id="runs-tbody"><tr><td colspan="7" class="empty-hint">Loading…</td></tr></tbody>
+  <tbody id="runs-tbody"><tr><td colspan="9" class="empty-hint">Loading…</td></tr></tbody>
 </table>
 """
 
@@ -772,7 +806,7 @@ const tbodyEl = document.getElementById("runs-tbody");
 function renderRunsTable() {
   const q = searchEl.value.trim().toLowerCase();
   const rows = allRuns
-    .filter(r => !q || (r.problem || "").toLowerCase().includes(q) || (r.restated_problem || "").toLowerCase().includes(q))
+    .filter(r => !q || (r.problem || "").toLowerCase().includes(q) || (r.restated_problem || "").toLowerCase().includes(q) || (r.variant || "").toLowerCase().includes(q))
     .slice()
     .sort((a, b) => {
       const av = a[sortKey], bv = b[sortKey];
@@ -783,7 +817,7 @@ function renderRunsTable() {
     });
 
   if (!rows.length) {
-    tbodyEl.innerHTML = `<tr><td colspan="7" class="empty-hint">${allRuns.length ? "No runs match your search." : "No runs yet — go run something on Home."}</td></tr>`;
+    tbodyEl.innerHTML = `<tr><td colspan="9" class="empty-hint">${allRuns.length ? "No runs match your search." : "No runs yet — go run something on Home."}</td></tr>`;
     return;
   }
 
@@ -792,11 +826,13 @@ function renderRunsTable() {
     const problem = escapeHtml(r.problem);
     return `<tr data-id="${r.id}">
       <td>${new Date(r.created_at).toLocaleString()}</td>
+      <td>${VARIANT_LABELS[r.variant] || r.variant}</td>
       <td class="problem-cell" title="${problem}">${problem}</td>
       <td><span class="badge ${verdictCls}">${VERDICT_LABELS[r.verdict] || r.verdict}</span></td>
       <td>${r.rounds ?? "?"} / ${r.max_rounds ?? "?"}</td>
       <td>${r.last_score != null ? `${r.last_score}/10` : "—"}</td>
       <td>${formatCost(r.total_cost)}</td>
+      <td>${r.total_tokens != null ? r.total_tokens.toLocaleString() : "—"}</td>
       <td>${formatDuration(r.duration_ms)}</td>
     </tr>`;
   }).join("");
@@ -875,9 +911,11 @@ fetch(`/api/history/${runId}`).then(r => {
 }).then(run => {
   subtitleEl.textContent = run.problem;
   runMetaEl.innerHTML = [
+    `<li><b>Variant:</b> ${VARIANT_LABELS[run.variant] || run.variant}</li>`,
     `<li><b>Verdict:</b> ${VERDICT_LABELS[run.verdict] || run.verdict}</li>`,
     `<li><b>Rounds:</b> ${run.rounds ?? "?"} of ${run.max_rounds ?? "?"}</li>`,
     `<li><b>Run at:</b> ${new Date(run.created_at).toLocaleString()}</li>`,
+    `<li><b>Duration:</b> ${formatDuration(run.duration_ms)}</li>`,
   ].join("");
   finalState = run.state;
   const totals = usageTotals(run.state);

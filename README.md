@@ -1,9 +1,16 @@
 # agentic-consensus
 
-A three-agent LangGraph loop. A **Moderator** frames a problem into checkable
-acceptance criteria, **Agent A** proposes a solution, and **Agent B** reviews it
-against those criteria. Rejected proposals go back to Agent A with the critique
-attached, and the loop repeats until Agent B approves or a stopping rule fires.
+Two LangGraph author/reviewer workflows built for a later controlled comparison. V1
+uses a **Moderator** to commit to criteria before **Agent A** writes and **Agent B**
+reviews. V2 removes the moderator: Agent B derives criteria after seeing each
+proposal and reviews it in the same call.
+
+| Variant | Shape | Main trade-off |
+| --- | --- | --- |
+| `v1-moderated-criteria` (default) | Moderator → Author ↔ Reviewer → Moderator | Independent criteria; two extra calls |
+| `v2-posthoc-reviewer` | Author ↔ Reviewer | Cheaper; criteria may anchor to the proposal |
+
+V1:
 
 ```
 START → intake ─→ agent_a ─→ agent_b ─→ [route]
@@ -13,7 +20,15 @@ START → intake ─→ agent_a ─→ agent_b ─→ [route]
                                        finalize → END
 ```
 
-## How it works
+V2:
+
+```text
+START → agent_a ─→ agent_b ─→ [route] → END
+            ↑          │
+            └─ revise ─┘
+```
+
+## How V1 works
 
 | Node       | Role      | Default model     | What it does                                            |
 | ---------- | --------- | ----------------- | ------------------------------------------------------- |
@@ -112,6 +127,13 @@ table in [docs/configuration.md](docs/configuration.md).
 uv run consensus "Design a rate limiter for a multi-tenant API" --out runs/limiter
 ```
 
+Select V2 explicitly:
+
+```bash
+uv run consensus --variant v2-posthoc-reviewer \
+  "Design a rate limiter for a multi-tenant API"
+```
+
 Progress streams to stderr as each node finishes; the final answer goes to stdout.
 `--out` additionally writes `runs/limiter.{md,html,json}`. Exit code is `0` on
 consensus and `1` otherwise, so it composes in a pipeline.
@@ -136,8 +158,9 @@ uv sync --extra web
 uv run consensus-web                  # http://127.0.0.1:8000
 ```
 
-Submit a problem on **Home** and watch it stream live, node by node (same events the
-CLI logs to stderr, over Server-Sent Events): a flow panel on the left, and a details
+Choose a workflow, submit a problem on **Home**, and watch it stream live node by
+node (the same events the CLI logs to stderr, over Server-Sent Events): a flow panel
+on the left, and a details
 panel on the right showing each node's model, effort, duration, token usage,
 provider-reported cost, and content rendered as markdown. Completed runs also show
 total calls, tokens, and cost. OpenRouter costs come directly from its response
@@ -146,7 +169,7 @@ unavailable. No auth, no external service — it's a thin transport around
 `graph.stream()`, so it reads whatever `.env` already configures. Use
 `--host 0.0.0.0` to expose it beyond localhost, `--port` to change the port.
 
-Every run that reaches `finalize` is saved to a local SQLite file
+Every completed run is saved to a local SQLite file
 (`CONSENSUS_DB_PATH`, default `consensus.db`) and shows up on **History** — a
 searchable, sortable table of past runs. Click one to replay it on its own page,
 identical to how it looked live, reconstructed entirely from the saved state (no
@@ -158,7 +181,8 @@ LLM calls). Runs that error out mid-way are not saved.
 uv run langgraph dev --studio-url https://eu.smith.langchain.com
 ```
 
-The explicit Studio URL matters for EU LangSmith accounts: the CLI otherwise opens
+Studio exposes both graphs under their public variant IDs. The explicit Studio URL
+matters for EU LangSmith accounts: the CLI otherwise opens
 the US host, where an EU login and organization do not exist. Add an EU-created
 `LANGSMITH_API_KEY` to `.env` to enable hosted traces; the local graph itself can run
 without that key. Open the URL the command prints and submit:
@@ -196,7 +220,7 @@ open("run.html", "w").write(render_html(result))
 ## Documentation
 
 Full docs in [docs/](docs/):
-[architecture](docs/architecture.md) ·
+[architecture](docs/architecture.md) · [variants](docs/variants.md) ·
 [configuration](docs/configuration.md) ·
 [providers](docs/providers.md) ·
 [visualization](docs/visualization.md) ·
@@ -206,12 +230,16 @@ Full docs in [docs/](docs/):
 
 ```
 src/agentic_consensus/
+├── variants/
+│   ├── registry.py
+│   ├── v1_moderated_criteria/  graph / nodes / prompts / state
+│   └── v2_posthoc_reviewer/    graph / nodes / prompts / state
 ├── config.py      every tunable, read from the environment
-├── state.py       ConsensusState + Review/Criteria schemas
+├── state.py       backward-compatible V1 schema exports
+├── schemas.py     Review / Usage / Verdict shared by variants
 ├── models.py      provider-agnostic model factories
-├── prompts.py     system prompts
-├── nodes.py       intake / agent_a / agent_b / finalize
-├── graph.py       StateGraph wiring + router, exports `graph`
+├── usage.py       shared token and cost extraction
+├── graph.py       backward-compatible default V1 graph export
 ├── transcript.py  markdown / HTML / JSON renderers
 ├── __main__.py    CLI runner
 ├── web.py         FastAPI app (`--extra web`): routes, worker thread, persistence

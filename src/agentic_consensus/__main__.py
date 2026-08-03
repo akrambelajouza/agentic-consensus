@@ -15,7 +15,6 @@ import sys
 from pathlib import Path
 
 from . import config
-from .graph import build_graph
 from .transcript import (
     VERDICT_LABELS,
     render_html,
@@ -23,16 +22,23 @@ from .transcript import (
     render_markdown,
     _as_review,
 )
+from .variants.registry import DEFAULT_VARIANT, VARIANTS, get_variant
 
 
 def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         prog="agentic_consensus",
-        description="Run the moderator / Agent A / Agent B consensus loop.",
+        description="Run a named Agent A / Agent B review workflow.",
     )
     source = parser.add_mutually_exclusive_group(required=True)
     source.add_argument("problem", nargs="?", help="The problem statement.")
     source.add_argument("-f", "--file", type=Path, help="Read the problem from a file.")
+    parser.add_argument(
+        "--variant",
+        choices=tuple(VARIANTS),
+        default=DEFAULT_VARIANT,
+        help=f"Workflow variant to run (default: {DEFAULT_VARIANT}).",
+    )
     parser.add_argument(
         "--rounds",
         type=int,
@@ -70,6 +76,7 @@ def main(argv: list[str] | None = None) -> int:
 
     verbose = not args.quiet
     rounds = args.rounds if args.rounds is not None else cfg["max_rounds"]
+    variant = get_variant(args.variant)
 
     problem = args.file.read_text(encoding="utf-8") if args.file else args.problem
     if not problem or not problem.strip():
@@ -77,22 +84,40 @@ def main(argv: list[str] | None = None) -> int:
         return 2
 
     roles: dict = cfg["roles"]
-    for label, role in (("author", "agent_a"), ("reviewer", "agent_b"), ("moderator", "moderator")):
+    configured_roles = [("author", "agent_a"), ("reviewer", "agent_b")]
+    if args.variant == DEFAULT_VARIANT:
+        configured_roles.append(("moderator", "moderator"))
+    _log(verbose, f"variant   {variant.label}")
+    for label, role in configured_roles:
         r = roles[role]
         _log(verbose, f"{label:<9} {r['model']}  ({r['max_tokens']:,} tok, {r['effort']} effort)")
     _log(verbose, f"{'rounds':<9} max {rounds}, stall patience {cfg['stall_patience']}\n")
 
-    graph = build_graph()
-    state: dict = {}
+    graph = variant.build_graph()
+    state: dict = {
+        "problem": problem,
+        "variant": variant.id,
+        "variant_version": variant.version,
+    }
 
     # `updates` yields one dict per node as it finishes: {node_name: returned_keys}.
     for chunk in graph.stream(
-        {"problem": problem, "max_rounds": rounds}, stream_mode="updates"
+        {
+            "problem": problem,
+            "variant": variant.id,
+            "variant_version": variant.version,
+            "max_rounds": rounds,
+        },
+        stream_mode="updates",
     ):
         for node, update in chunk.items():
             state.update(
                 {
-                    k: (state.get(k, []) + v if k in ("proposals", "reviews") else v)
+                    k: (
+                        state.get(k, []) + v
+                        if k in ("proposals", "reviews", "criteria_history", "usage")
+                        else v
+                    )
                     for k, v in update.items()
                 }
             )
@@ -105,10 +130,17 @@ def main(argv: list[str] | None = None) -> int:
                 _log(verbose, f"\nround {update['round']}  agent A proposed ({chars:,} chars)")
             elif node == "agent_b":
                 review = _as_review(update["reviews"][0])
+                if hasattr(review, "criteria"):
+                    _log(verbose, "         post-hoc criteria:")
+                    for i, criterion in enumerate(review.criteria, start=1):
+                        _log(verbose, f"           {i}. {criterion}")
                 mark = "APPROVED" if review.approved else "CHANGES REQUESTED"
                 _log(verbose, f"         agent B: {mark} ({review.score}/10)")
                 for c in review.required_changes:
                     _log(verbose, f"           - {c}")
+                if update.get("verdict"):
+                    verdict = update["verdict"]
+                    _log(verbose, f"\n{VERDICT_LABELS.get(verdict, verdict)}\n")
             elif node == "finalize":
                 verdict = update["verdict"]
                 _log(verbose, f"\n{VERDICT_LABELS.get(verdict, verdict)}\n")

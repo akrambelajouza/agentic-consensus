@@ -199,5 +199,5 @@ Differences that `models.py` absorbs:
 4. Add a prefix rule to `_infer_provider` if bare-name inference should work.
 5. Add the package as an optional extra in `pyproject.toml`.
 
-Nothing in `nodes.py`, `graph.py`, `state.py`, or `config.py` should need touching — if it does,
-the abstraction has leaked and that's worth fixing rather than working around.
+Nothing in a variant's nodes, graph, state, or in `config.py` should need touching —
+if it does, the abstraction has leaked and is worth fixing rather than working around.

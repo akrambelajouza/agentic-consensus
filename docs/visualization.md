@@ -152,14 +152,16 @@ uv run consensus-web    # http://127.0.0.1:8000
 
 Three pages, reachable from the same top nav:
 
-- **Home** — submit a problem, watch it stream live over Server-Sent Events: a flow
+- **Home** — choose V1 or V2, submit a problem, and watch it stream live over
+  Server-Sent Events: a flow
   panel on the left (Intake → Agent A · Round *N* → Agent B · Round *N* → ... →
   Finalize, appended as each node finishes), a details panel on the right showing
   the selected node's role, model, effort, duration, token usage, reasoning/cache
   token details, provider-reported cost, and content rendered as Markdown. The flow
   shows tokens and cost per call; a completed run shows total calls, tokens, and cost.
-- **History** — every run that reached `finalize` (any verdict), most recent first,
-  searchable and sortable. Backed by SQLite (`CONSENSUS_DB_PATH`, default
+- **History** — every completed run (any verdict), most recent first, searchable and
+  sortable by variant, cost, tokens, duration, and outcome. Backed by SQLite
+  (`CONSENSUS_DB_PATH`, default
   `consensus.db`) — see [configuration.md](configuration.md#web-ui-run-history).
   Runs that error out mid-way are not saved.
 - **Replay** (`/history/{id}`) — click a row to see that run exactly as it looked

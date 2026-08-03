@@ -19,6 +19,7 @@ from .graph import build_graph, graph
 from .models import active_models, build_llm, parse_spec, resolve_spec
 from .state import ConsensusState, Criteria, Review
 from .transcript import render_html, render_json, render_markdown, summary
+from .variants import DEFAULT_VARIANT, VARIANTS, get_variant
 
 __all__ = [
     "build_graph",
@@ -36,4 +37,7 @@ __all__ = [
     "render_json",
     "render_markdown",
     "summary",
+    "DEFAULT_VARIANT",
+    "VARIANTS",
+    "get_variant",
 ]
