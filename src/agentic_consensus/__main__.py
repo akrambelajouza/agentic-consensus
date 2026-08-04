@@ -22,7 +22,12 @@ from .transcript import (
     render_markdown,
     _as_review,
 )
-from .variants.registry import DEFAULT_VARIANT, VARIANTS, get_variant
+from .variants.registry import (
+    DEFAULT_VARIANT,
+    V2_POSTHOC_REVIEWER,
+    VARIANTS,
+    get_variant,
+)
 
 
 def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
@@ -85,7 +90,7 @@ def main(argv: list[str] | None = None) -> int:
 
     roles: dict = cfg["roles"]
     configured_roles = [("author", "agent_a"), ("reviewer", "agent_b")]
-    if args.variant == DEFAULT_VARIANT:
+    if args.variant != V2_POSTHOC_REVIEWER:
         configured_roles.append(("moderator", "moderator"))
     _log(verbose, f"variant   {variant.label}")
     for label, role in configured_roles:
@@ -131,13 +136,24 @@ def main(argv: list[str] | None = None) -> int:
             elif node == "agent_b":
                 review = _as_review(update["reviews"][0])
                 if hasattr(review, "criteria"):
-                    _log(verbose, "         post-hoc criteria:")
+                    _log(verbose, "         reviewer criteria:")
                     for i, criterion in enumerate(review.criteria, start=1):
                         _log(verbose, f"           {i}. {criterion}")
                 mark = "APPROVED" if review.approved else "CHANGES REQUESTED"
-                _log(verbose, f"         agent B: {mark} ({review.score}/10)")
-                for c in review.required_changes:
-                    _log(verbose, f"           - {c}")
+                if hasattr(review, "categorized_findings"):
+                    blocking = len(review.blocking_findings())
+                    _log(verbose, f"         agent B: {mark} ({blocking} blocking defects)")
+                    for category, findings in review.categorized_findings():
+                        for finding in findings:
+                            _log(
+                                verbose,
+                                f"           - [{finding.severity}] {category}: "
+                                f"{finding.description}",
+                            )
+                else:
+                    _log(verbose, f"         agent B: {mark} ({review.score}/10)")
+                    for c in review.required_changes:
+                        _log(verbose, f"           - {c}")
                 if update.get("verdict"):
                     verdict = update["verdict"]
                     _log(verbose, f"\n{VERDICT_LABELS.get(verdict, verdict)}\n")

@@ -81,6 +81,28 @@ class HistoryDbTests(unittest.TestCase):
         run_id = db.save_run("p", self._state(reviews=[]), path=self.path)
         self.assertIsNone(db.get_run(run_id, path=self.path)["last_score"])
 
+    def test_v3_review_without_score_is_saved(self) -> None:
+        state = self._state(
+            variant="v3-adversarial-reviewer",
+            reviews=[
+                {
+                    "missing_requirements": [],
+                    "violated_acceptance_criteria": [],
+                    "edge_cases": [],
+                    "ambiguities": [],
+                    "risks": [],
+                    "summary": "No blocking defects.",
+                    "approved": True,
+                    "required_changes": [],
+                }
+            ],
+        )
+        run_id = db.save_run("p", state, path=self.path)
+        row = db.get_run(run_id, path=self.path)
+
+        self.assertEqual(row["variant"], "v3-adversarial-reviewer")
+        self.assertIsNone(row["last_score"])
+
     def test_total_cost_is_null_when_provider_did_not_report_it(self) -> None:
         state = self._state(
             usage=[

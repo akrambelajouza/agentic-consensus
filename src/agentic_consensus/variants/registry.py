@@ -8,6 +8,7 @@ from typing import Callable
 
 V1_MODERATED_CRITERIA = "v1-moderated-criteria"
 V2_POSTHOC_REVIEWER = "v2-posthoc-reviewer"
+V3_ADVERSARIAL_REVIEWER = "v3-adversarial-reviewer"
 DEFAULT_VARIANT = V1_MODERATED_CRITERIA
 
 
@@ -32,6 +33,12 @@ def _build_v2():
     return build_graph()
 
 
+def _build_v3():
+    from .v3_adversarial_reviewer.graph import build_graph
+
+    return build_graph()
+
+
 VARIANTS = {
     V1_MODERATED_CRITERIA: VariantSpec(
         id=V1_MODERATED_CRITERIA,
@@ -51,6 +58,16 @@ VARIANTS = {
             "in one call."
         ),
         build_graph=_build_v2,
+    ),
+    V3_ADVERSARIAL_REVIEWER: VariantSpec(
+        id=V3_ADVERSARIAL_REVIEWER,
+        version=1,
+        label="V3 — Adversarial reviewer",
+        description=(
+            "Moderator fixes criteria before Agent A drafts; Agent B then tries to "
+            "prove the proposal is not ready through substantiated blocking defects."
+        ),
+        build_graph=_build_v3,
     ),
 }
 

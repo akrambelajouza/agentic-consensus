@@ -195,6 +195,7 @@ const ROLE_LABELS = { moderator: "Moderator", agent_a: "Agent A — author", age
 const VARIANT_LABELS = {
   "v1-moderated-criteria": "V1 — Moderated criteria",
   "v2-posthoc-reviewer": "V2 — Post-hoc reviewer",
+  "v3-adversarial-reviewer": "V3 — Adversarial reviewer",
 };
 
 const errorEl = document.getElementById("error");
@@ -370,14 +371,35 @@ function buildEntry(node, update, duration_ms) {
   if (node === "agent_b") {
     const review = update.reviews[update.reviews.length - 1];
     const cls = review.approved ? "ok" : "warn";
-    const badgeHtml = `<span class="badge ${cls}">${review.approved ? "APPROVED" : "CHANGES"}</span><span class="badge ${cls}">${review.score}/10</span>`;
+    const adversarial = Object.hasOwn(review, "missing_requirements");
+    const categories = [
+      ["Missing requirements", review.missing_requirements || []],
+      ["Violated acceptance criteria", review.violated_acceptance_criteria || []],
+      ["Edge cases", review.edge_cases || []],
+      ["Ambiguities", review.ambiguities || []],
+      ["Risks", review.risks || []],
+    ];
+    const blockingCount = categories.flatMap(([, findings]) => findings)
+      .filter(f => f.severity === "blocking").length;
+    const metric = adversarial ? `${blockingCount} blocking` : `${review.score}/10`;
+    const badgeHtml = `<span class="badge ${cls}">${review.approved ? "APPROVED" : "CHANGES"}</span><span class="badge ${cls}">${metric}</span>`;
     let md = "";
     if (review.criteria && review.criteria.length) {
-      md += `**Post-hoc criteria**\n\n` + review.criteria.map((c, i) => `${i + 1}. ${c}`).join("\n") + "\n\n";
+      md += `**Reviewer criteria**\n\n` + review.criteria.map((c, i) => `${i + 1}. ${c}`).join("\n") + "\n\n";
     }
-    md += `**Critique**\n\n${review.critique}`;
-    if (review.required_changes && review.required_changes.length) {
-      md += `\n\n**Required changes**\n\n` + review.required_changes.map(c => `- ${c}`).join("\n");
+    if (adversarial) {
+      md += `**Adversarial conclusion**\n\n${review.summary}`;
+      for (const [category, findings] of categories) {
+        md += `\n\n**${category}**\n\n`;
+        md += findings.length ? findings.map(f =>
+          `- [${f.severity.replaceAll("_", " ").toUpperCase()}] ${f.description} — Evidence: ${f.evidence} — Required correction: ${f.required_correction || "None"}`
+        ).join("\n") : "- None";
+      }
+    } else {
+      md += `**Critique**\n\n${review.critique}`;
+      if (review.required_changes && review.required_changes.length) {
+        md += `\n\n**Required changes**\n\n` + review.required_changes.map(c => `- ${c}`).join("\n");
+      }
     }
     const outcome = update.verdict ? `<span class="badge ${update.verdict === "consensus" ? "ok" : "warn"}">${VERDICT_LABELS[update.verdict]}</span>` : "";
     return { ...base, id: `agent_b-${currentRound}`, roleKey: "agent_b", label: `Agent B · Round ${currentRound}`, badgeHtml: badgeHtml + outcome, contentMd: md };
@@ -465,8 +487,8 @@ function buildEntriesFromState(state) {
   };
 
   const entries = [];
-  const isPostHoc = state.variant === "v2-posthoc-reviewer";
-  if (!isPostHoc) {
+  const hasModerator = state.variant !== "v2-posthoc-reviewer";
+  if (hasModerator) {
     entries.push(buildEntry("intake", {
       restated_problem: state.restated_problem,
       criteria: state.criteria || [],
@@ -486,13 +508,13 @@ function buildEntriesFromState(state) {
     if (i < reviews.length) {
       entries.push(buildEntry("agent_b", {
         reviews: reviews.slice(0, i + 1),
-        verdict: isPostHoc && i === reviews.length - 1 ? state.verdict : null,
+        verdict: !hasModerator && i === reviews.length - 1 ? state.verdict : null,
         usage: takeUsage("agent_b"),
       }, takeDuration("agent_b")));
     }
   }
 
-  if (!isPostHoc) {
+  if (hasModerator) {
     entries.push(buildEntry("finalize", {
       verdict: state.verdict,
       final_answer: state.final_answer,
@@ -651,7 +673,7 @@ function onConfigLoaded(cfg) {
   const paintModels = () => {
   const meta = document.getElementById("model-meta");
   const rows = [["Author", cfg.roles.agent_a], ["Reviewer", cfg.roles.agent_b]];
-  if (variantEl.value === "v1-moderated-criteria") rows.unshift(["Moderator", cfg.roles.moderator]);
+  if (variantEl.value !== "v2-posthoc-reviewer") rows.unshift(["Moderator", cfg.roles.moderator]);
   meta.innerHTML = rows.map(([label, r]) =>
     `<li><b>${label}:</b> <code>${r.model}</code> (${r.effort})</li>`
   ).join("") + `<li><b>Variant:</b> ${VARIANT_LABELS[variantEl.value]}</li><li><b>Max rounds:</b> ${cfg.max_rounds}</li>`;
@@ -726,9 +748,12 @@ async function runConsensus(problem, rounds, variant) {
           } else if (node === "agent_b") {
             const review = update.reviews[update.reviews.length - 1];
             const mark = review.approved ? "APPROVED" : "changes requested";
+            const metric = Object.hasOwn(review, "missing_requirements")
+              ? `${review.required_changes.length} blocking defects`
+              : `${review.score}/10`;
             statusText.textContent = update.verdict
               ? (VERDICT_LABELS[update.verdict] || update.verdict)
-              : `Round ${currentRound}: Agent B — ${mark} (${review.score}/10)`;
+              : `Round ${currentRound}: Agent B — ${mark} (${metric})`;
           } else if (node === "finalize") {
             statusText.textContent = VERDICT_LABELS[update.verdict] || update.verdict;
           }

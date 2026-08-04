@@ -30,7 +30,7 @@ from fastapi.responses import HTMLResponse, JSONResponse, Response, StreamingRes
 from pydantic import BaseModel
 
 from . import config, db
-from .schemas import Review, Usage
+from .schemas import Usage
 from .transcript import render_html, render_json, render_markdown
 from .variants.registry import DEFAULT_VARIANT, VARIANTS, get_variant
 from .web_templates import HISTORY_HTML, INDEX_HTML, REPLAY_HTML
@@ -60,7 +60,7 @@ def _jsonable(update: dict[str, Any]) -> dict[str, Any]:
 
     def convert(key: str, value: Any) -> Any:
         if key == "reviews":
-            return [v.model_dump() if isinstance(v, Review) else v for v in value]
+            return [v.model_dump() if isinstance(v, BaseModel) else v for v in value]
         if key == "usage":
             return [v.model_dump() if isinstance(v, Usage) else v for v in value]
         return value

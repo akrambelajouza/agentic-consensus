@@ -1,12 +1,13 @@
 # Documentation
 
-Two named LangGraph workflows explore when evaluation criteria should be created:
-V1 commits to them before the answer, while V2 derives them after seeing the answer.
+Three named LangGraph workflows explore criteria timing and reviewer posture: V1
+commits to criteria before the answer, V2 derives them afterward, and V3 keeps V1's
+fixed criteria while replacing scoring with an adversarial search for defects.
 
 | Page | What's in it |
 | --- | --- |
 | [architecture.md](architecture.md) | The graph, the state, the routing rules, why the moderator isn't the router |
-| [variants.md](variants.md) | V1 versus V2 topology, criteria timing, selection, and cost shape |
+| [variants.md](variants.md) | V1–V3 topology, reviewer behavior, selection, and cost shape |
 | [configuration.md](configuration.md) | Every `.env` variable: rounds, stall guard, models, token budgets, effort |
 | [providers.md](providers.md) | Anthropic, OpenAI and OpenRouter; mixing vendors across roles |
 | [visualization.md](visualization.md) | Watching a run, the web UI, and exporting a shareable transcript |
@@ -30,6 +31,7 @@ uv run consensus "Design a rate limiter for a multi-tenant API" --out runs/limit
 ```
 
 Add `--variant v2-posthoc-reviewer` to run the answer-first V2 graph.
+Use `--variant v3-adversarial-reviewer` for the score-free defect-finding graph.
 
 Or run it interactively in LangGraph Studio:
 
@@ -60,4 +62,5 @@ result["reviews"]        # every critique, in order
 V1's criteria are independent of the proposal but require moderator calls. V2 is
 cheaper, but its criteria may be anchored to what Agent A chose to discuss. V2 keeps
 each round's rubric in `criteria_history` so that later comparison can measure this
-rather than relying on impressions.
+rather than relying on impressions. V3 tests whether an evidence-backed adversarial
+reviewer reduces false approvals without causing excessive rejection.

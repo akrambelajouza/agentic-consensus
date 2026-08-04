@@ -29,9 +29,15 @@ VERDICT_LABELS = {
 }
 
 
-def _as_review(value: Review | dict) -> Review:
+def _as_review(value: Any) -> Any:
     if isinstance(value, Review):
         return value
+    if hasattr(value, "categorized_findings"):
+        return value
+    if "missing_requirements" in value:
+        from .variants.v3_adversarial_reviewer.state import AdversarialReview
+
+        return AdversarialReview.model_validate(value)
     if "criteria" in value:
         from .variants.v2_posthoc_reviewer.state import PostHocReview
 
@@ -46,7 +52,7 @@ def _models_for(state: ConsensusState) -> dict[str, str]:
     return models
 
 
-def _rounds(state: ConsensusState) -> list[tuple[int, str, Review | None]]:
+def _rounds(state: ConsensusState) -> list[tuple[int, str, Any | None]]:
     """Pair each proposal with its review. A trailing unreviewed proposal yields None."""
     proposals = list(state.get("proposals") or [])
     reviews = [_as_review(r) for r in state.get("reviews") or []]
@@ -85,7 +91,12 @@ def summary(state: ConsensusState) -> dict[str, Any]:
         "verdict": state.get("verdict"),
         "rounds": state.get("round"),
         "max_rounds": state.get("max_rounds"),
-        "scores": [r.score for r in reviews],
+        "scores": [r.score for r in reviews if hasattr(r, "score")],
+        "blocking_defects": [
+            len(r.blocking_findings())
+            for r in reviews
+            if hasattr(r, "blocking_findings")
+        ],
         "approved": bool(reviews and reviews[-1].approved),
         "criteria": list(state.get("criteria") or []),
         "variant": state.get("variant", "v1-moderated-criteria"),
@@ -103,7 +114,13 @@ def render_markdown(state: ConsensusState) -> str:
     models = _models_for(state)
     verdict = state.get("verdict") or "unknown"
     reviews = [_as_review(r) for r in state.get("reviews") or []]
-    scores = " → ".join(f"{r.score}/10" for r in reviews) or "—"
+    scored = [r for r in reviews if hasattr(r, "score")]
+    scores = " → ".join(f"{r.score}/10" for r in scored) or "—"
+    defect_counts = [
+        len(r.blocking_findings())
+        for r in reviews
+        if hasattr(r, "blocking_findings")
+    ]
     usage, total_tokens, total_cost = _usage_summary(state)
     role_rows = []
     if "moderator" in models:
@@ -119,7 +136,11 @@ def render_markdown(state: ConsensusState) -> str:
         f"**Outcome:** {VERDICT_LABELS.get(verdict, verdict)}  ",
         f"**Variant:** {state.get('variant', 'v1-moderated-criteria')}  ",
         f"**Rounds:** {state.get('round', '?')} of {state.get('max_rounds', '?')}  ",
-        f"**Score trend:** {scores}",
+        (
+            "**Blocking-defect trend:** " + " → ".join(map(str, defect_counts))
+            if defect_counts
+            else f"**Score trend:** {scores}"
+        ),
         f"**Model calls:** {len(usage)}  ",
         (
             f"**Total tokens:** {total_tokens:,}"
@@ -150,19 +171,46 @@ def render_markdown(state: ConsensusState) -> str:
         badge = "APPROVED" if review.approved else "CHANGES REQUESTED"
         criteria = getattr(review, "criteria", None)
         if criteria:
-            out += ["**Agent B's post-hoc criteria:**", ""]
+            criteria_label = (
+                "Agent B's adversarial criteria"
+                if hasattr(review, "categorized_findings")
+                else "Agent B's post-hoc criteria"
+            )
+            out += [f"**{criteria_label}:**", ""]
             out += [f"{i}. {criterion}" for i, criterion in enumerate(criteria, 1)]
             out += [""]
-        out += [
-            f"**Agent B — {badge} ({review.score}/10):**",
-            "",
-            review.critique,
-            "",
-        ]
-        if review.required_changes:
-            out += ["**Required changes:**", ""]
-            out += [f"- {c}" for c in review.required_changes]
-            out += [""]
+        if hasattr(review, "categorized_findings"):
+            blocking = len(review.blocking_findings())
+            out += [
+                f"**Agent B — {badge} ({blocking} blocking defects):**",
+                "",
+                review.summary,
+                "",
+            ]
+            for category, findings in review.categorized_findings():
+                out += [f"**{category}:**", ""]
+                if not findings:
+                    out += ["- None", ""]
+                    continue
+                for finding in findings:
+                    out += [
+                        f"- **{finding.severity.replace('_', ' ').upper()}** — "
+                        f"{finding.description}",
+                        f"  - Evidence: {finding.evidence}",
+                        f"  - Required correction: {finding.required_correction or 'None'}",
+                    ]
+                out += [""]
+        else:
+            out += [
+                f"**Agent B — {badge} ({review.score}/10):**",
+                "",
+                review.critique,
+                "",
+            ]
+            if review.required_changes:
+                out += ["**Required changes:**", ""]
+                out += [f"- {c}" for c in review.required_changes]
+                out += [""]
 
     out += ["## Final answer", "", state.get("final_answer") or "_(none)_", ""]
     return "\n".join(out)
@@ -231,9 +279,19 @@ def render_html(state: ConsensusState, *, title: str = "Consensus run") -> str:
         f"<li><b>Variant:</b> {_esc(state.get('variant', 'v1-moderated-criteria'))}</li>",
         f"<li><b>Rounds:</b> {_esc(str(state.get('round', '?')))}"
         f" of {_esc(str(state.get('max_rounds', '?')))}</li>",
-        "<li><b>Scores:</b> "
-        + (" &rarr; ".join(f"{r.score}/10" for r in reviews) or "&mdash;")
-        + "</li>",
+        (
+            "<li><b>Blocking defects:</b> "
+            + " &rarr; ".join(
+                str(len(r.blocking_findings()))
+                for r in reviews
+                if hasattr(r, "blocking_findings")
+            )
+            + "</li>"
+            if any(hasattr(r, "blocking_findings") for r in reviews)
+            else "<li><b>Scores:</b> "
+            + (" &rarr; ".join(f"{r.score}/10" for r in reviews) or "&mdash;")
+            + "</li>"
+        ),
         f"<li><b>Author:</b> <code>{_esc(models['agent_a'])}</code></li>",
         f"<li><b>Reviewer:</b> <code>{_esc(models['agent_b'])}</code></li>",
         f"<li><b>Model calls:</b> {len(usage)}</li>",
@@ -261,26 +319,62 @@ def render_html(state: ConsensusState, *, title: str = "Consensus run") -> str:
             cls, label = (
                 ("ok", "APPROVED") if review.approved else ("warn", "CHANGES REQUESTED")
             )
+            adversarial = hasattr(review, "categorized_findings")
+            metric = (
+                f"{len(review.blocking_findings())} blocking"
+                if adversarial
+                else f"{review.score}/10"
+            )
             badge = (
                 f'<span class="badge {cls}">{label}</span>'
-                f'<span class="badge {cls}">{review.score}/10</span>'
+                f'<span class="badge {cls}">{metric}</span>'
             )
             changes = ""
             posthoc_criteria = ""
             review_criteria = getattr(review, "criteria", None)
             if review_criteria:
                 items = "".join(f"<li>{_esc(c)}</li>" for c in review_criteria)
+                criteria_label = (
+                    "Agent B adversarial criteria"
+                    if adversarial
+                    else "Agent B post-hoc criteria"
+                )
                 posthoc_criteria = (
-                    '<div class="who">Agent B post-hoc criteria</div>'
+                    f'<div class="who">{criteria_label}</div>'
                     f'<ol class="criteria">{items}</ol>'
                 )
-            if review.required_changes:
-                items = "".join(f"<li>{_esc(c)}</li>" for c in review.required_changes)
-                changes = f'<div class="who">Required changes</div><ul class="changes">{items}</ul>'
-            review_html = (
-                f'<div class="who">Agent B &mdash; reviewer</div>'
-                f"{posthoc_criteria}<pre>{_esc(review.critique)}</pre>{changes}"
-            )
+            if adversarial:
+                finding_blocks = []
+                for category, findings in review.categorized_findings():
+                    items = "".join(
+                        "<li>"
+                        f"<b>{_esc(finding.severity.replace('_', ' ').upper())}</b> &mdash; "
+                        f"{_esc(finding.description)}<br>"
+                        f"<b>Evidence:</b> {_esc(finding.evidence)}<br>"
+                        "<b>Required correction:</b> "
+                        f"{_esc(finding.required_correction or 'None')}"
+                        "</li>"
+                        for finding in findings
+                    ) or "<li>None</li>"
+                    finding_blocks.append(
+                        f'<div class="who">{_esc(category)}</div><ul class="changes">{items}</ul>'
+                    )
+                review_html = (
+                    f'<div class="who">Agent B &mdash; adversarial reviewer</div>'
+                    f"{posthoc_criteria}<pre>{_esc(review.summary)}</pre>"
+                    + "".join(finding_blocks)
+                )
+            else:
+                if review.required_changes:
+                    items = "".join(f"<li>{_esc(c)}</li>" for c in review.required_changes)
+                    changes = (
+                        '<div class="who">Required changes</div>'
+                        f'<ul class="changes">{items}</ul>'
+                    )
+                review_html = (
+                    f'<div class="who">Agent B &mdash; reviewer</div>'
+                    f"{posthoc_criteria}<pre>{_esc(review.critique)}</pre>{changes}"
+                )
 
         blocks.append(
             f'<details class="round"{" open" if is_last else ""}>'

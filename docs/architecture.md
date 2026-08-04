@@ -34,6 +34,30 @@ normal review with `criteria`. Those criteria are appended to `criteria_history`
 every round. Agent B also sets the terminal verdict; there is no intake or finalizer
 call, and the latest Agent A proposal becomes the final answer.
 
+## V3 — Adversarial reviewer
+
+```mermaid
+flowchart TD
+    START([start]) --> intake
+    intake["intake<br/><i>moderator</i><br/>problem → fixed criteria"] --> agent_a
+    agent_a["agent_a<br/><i>author</i><br/>writes a full solution"] --> agent_b
+    agent_b["agent_b<br/><i>adversarial reviewer</i><br/>searches for defects"] --> route{route}
+    route -->|blocking defects,<br/>rounds left| agent_a
+    route -->|none / limit / stalled| finalize
+    finalize["finalize<br/><i>moderator</i><br/>verdict + answer"] --> END([end])
+```
+
+V3 deliberately uses V1's topology and its fixed intake criteria. Its
+`AdversarialReview` replaces scoring with five categorized defect lists. Each
+`Defect` contains severity, evidence, and a required correction. `approved` and
+`required_changes` are computed fields: approval is true exactly when the review
+contains no `blocking` findings. The model therefore cannot approve and report a
+blocking defect at the same time.
+
+V3's stall guard treats a falling blocking-defect count as progress. Flat or rising
+counts across the configured patience window send the run to the moderator finalizer
+as `stalled`.
+
 ## V1 roles
 
 | Node | Role | Returns | Notes |
@@ -162,7 +186,8 @@ src/agentic_consensus/
 ├── variants/
 │   ├── registry.py               public IDs and graph factories
 │   ├── v1_moderated_criteria/    V1 graph, nodes, prompts, state
-│   └── v2_posthoc_reviewer/      V2 graph, nodes, prompts, state
+│   ├── v2_posthoc_reviewer/      V2 graph, nodes, prompts, state
+│   └── v3_adversarial_reviewer/  V3 graph, nodes, prompts, state
 ├── config.py      every tunable, read from the environment
 ├── state.py       backward-compatible V1 state exports
 ├── schemas.py     Review / Usage / Verdict shared by variants

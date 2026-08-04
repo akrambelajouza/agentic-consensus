@@ -1,7 +1,7 @@
 [project]
 name = "agentic-consensus"
 version = "0.1.0"
-description = "A three-agent LangGraph loop: a moderator frames a problem, Agent A proposes, Agent B critiques, until consensus."
+description = "Named LangGraph author/reviewer workflows for comparing evaluation strategies."
 requires-python = ">=3.10"
 dependencies = [
     "langgraph>=1.2",

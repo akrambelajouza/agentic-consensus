@@ -1,8 +1,8 @@
-"""A three-agent consensus loop built on LangGraph.
+"""Named author/reviewer workflow experiments built on LangGraph.
 
-A moderator frames a problem into checkable acceptance criteria, Agent A proposes a
-solution, and Agent B reviews it against those criteria. Rejected proposals go back to
-Agent A with the critique attached, until Agent B approves or a stopping rule fires.
+V1 uses a moderator around an author/reviewer loop; V2 creates its criteria post hoc;
+V3 adversarially searches for substantiated defects. Rejected proposals return to
+Agent A until the reviewer approves or a stopping rule fires.
 
 Everything tunable — the round cap, the stall guard, and each role's model, token
 budget, and reasoning effort — is read from the environment. See ``config.py`` and

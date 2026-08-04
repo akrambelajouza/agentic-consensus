@@ -1,14 +1,16 @@
 # agentic-consensus
 
-Two LangGraph author/reviewer workflows built for a later controlled comparison. V1
+Three LangGraph author/reviewer workflows built for a later controlled comparison. V1
 uses a **Moderator** to commit to criteria before **Agent A** writes and **Agent B**
 reviews. V2 removes the moderator: Agent B derives criteria after seeing each
-proposal and reviews it in the same call.
+proposal and reviews it in the same call. V3 returns to V1's moderated topology and
+changes only Agent B into an adversarial defect finder.
 
 | Variant | Shape | Main trade-off |
 | --- | --- | --- |
 | `v1-moderated-criteria` (default) | Moderator → Author ↔ Reviewer → Moderator | Independent criteria; two extra calls |
 | `v2-posthoc-reviewer` | Author ↔ Reviewer | Cheaper; criteria may anchor to the proposal |
+| `v3-adversarial-reviewer` | Moderator → Author ↔ Adversarial reviewer → Moderator | Fixed criteria plus concrete defect evidence |
 
 V1:
 
@@ -27,6 +29,10 @@ START → agent_a ─→ agent_b ─→ [route] → END
             ↑          │
             └─ revise ─┘
 ```
+
+V3 uses V1's topology and fixed intake criteria. Agent B searches five defect
+categories and loops only when at least one substantiated `blocking` finding exists.
+It has no numeric score.
 
 ## How V1 works
 
@@ -134,6 +140,13 @@ uv run consensus --variant v2-posthoc-reviewer \
   "Design a rate limiter for a multi-tenant API"
 ```
 
+Select V3 explicitly:
+
+```bash
+uv run consensus --variant v3-adversarial-reviewer \
+  "Design a rate limiter for a multi-tenant API"
+```
+
 Progress streams to stderr as each node finishes; the final answer goes to stdout.
 `--out` additionally writes `runs/limiter.{md,html,json}`. Exit code is `0` on
 consensus and `1` otherwise, so it composes in a pipeline.
@@ -181,7 +194,7 @@ LLM calls). Runs that error out mid-way are not saved.
 uv run langgraph dev --studio-url https://eu.smith.langchain.com
 ```
 
-Studio exposes both graphs under their public variant IDs. The explicit Studio URL
+Studio exposes all three graphs under their public variant IDs. The explicit Studio URL
 matters for EU LangSmith accounts: the CLI otherwise opens
 the US host, where an EU login and organization do not exist. Add an EU-created
 `LANGSMITH_API_KEY` to `.env` to enable hosted traces; the local graph itself can run
@@ -233,7 +246,8 @@ src/agentic_consensus/
 ├── variants/
 │   ├── registry.py
 │   ├── v1_moderated_criteria/  graph / nodes / prompts / state
-│   └── v2_posthoc_reviewer/    graph / nodes / prompts / state
+│   ├── v2_posthoc_reviewer/    graph / nodes / prompts / state
+│   └── v3_adversarial_reviewer/ graph / nodes / prompts / state
 ├── config.py      every tunable, read from the environment
 ├── state.py       backward-compatible V1 schema exports
 ├── schemas.py     Review / Usage / Verdict shared by variants

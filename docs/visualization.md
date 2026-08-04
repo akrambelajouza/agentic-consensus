@@ -152,7 +152,7 @@ uv run consensus-web    # http://127.0.0.1:8000
 
 Three pages, reachable from the same top nav:
 
-- **Home** — choose V1 or V2, submit a problem, and watch it stream live over
+- **Home** — choose V1, V2, or V3, submit a problem, and watch it stream live over
   Server-Sent Events: a flow
   panel on the left (Intake → Agent A · Round *N* → Agent B · Round *N* → ... →
   Finalize, appended as each node finishes), a details panel on the right showing

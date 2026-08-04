@@ -133,7 +133,7 @@ def init_db(path: str | None = None) -> None:
 def save_run(problem: str, state: dict[str, Any], *, path: str | None = None) -> int:
     """Persist a completed run. Returns the new row's id.
 
-    ``state`` must already carry a ``verdict`` — both variants set one only when the
+    ``state`` must already carry a ``verdict`` — every variant sets one only when the
     graph has finished. The web worker calls this after ``graph.stream(...)`` returns
     without raising. Raising here instead of silently writing a partial row keeps
     that guarantee from rotting silently.
@@ -142,7 +142,7 @@ def save_run(problem: str, state: dict[str, Any], *, path: str | None = None) ->
         raise ValueError("save_run requires a completed state (missing 'verdict')")
 
     reviews = state.get("reviews") or []
-    last_score = reviews[-1]["score"] if reviews else None
+    last_score = reviews[-1].get("score") if reviews else None
     usage = state.get("usage") or []
     costs = [
         u.get("cost")
