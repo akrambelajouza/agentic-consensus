@@ -9,6 +9,7 @@ fixed criteria while replacing scoring with an adversarial search for defects.
 | [architecture.md](architecture.md) | The graph, the state, the routing rules, why the moderator isn't the router |
 | [variants.md](variants.md) | V1–V3 topology, reviewer behavior, selection, and cost shape |
 | [configuration.md](configuration.md) | Every `.env` variable: rounds, stall guard, models, token budgets, effort |
+| [experiments.md](experiments.md) | Running one controlled problem through V1–V3 and reading the comparison |
 | [providers.md](providers.md) | Anthropic, OpenAI and OpenRouter; mixing vendors across roles |
 | [visualization.md](visualization.md) | Watching a run, the web UI, and exporting a shareable transcript |
 | [troubleshooting.md](troubleshooting.md) | Failure modes and what actually causes them |
@@ -39,7 +40,7 @@ Or run it interactively in LangGraph Studio:
 uv run langgraph dev --studio-url https://eu.smith.langchain.com
 ```
 
-Or from a browser, with a history of past runs:
+Or from a browser, with run history and saved architecture comparisons:
 
 ```bash
 uv sync --extra web

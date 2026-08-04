@@ -1,4 +1,4 @@
-"""HTML/CSS/JS for the web UI's three pages: Home, History, Replay.
+"""Self-contained HTML/CSS/JS templates for runs, experiments, and replay.
 
 Every page ships as one self-contained response — inline ``<style>``/``<script>``,
 no CDN, no build step — same "no external assets" convention as ``transcript.py``'s
@@ -73,6 +73,7 @@ button.ghost { background:transparent; color:var(--accent); border:1px solid var
 .badge { font-size:.72rem; font-weight:700; letter-spacing:.03em; padding:.12rem .45rem;
          border-radius:999px; border:1px solid currentColor; }
 .badge.ok { color:var(--ok); } .badge.warn { color:var(--warn); }
+.badge.err { color:var(--err); }
 pre { white-space:pre-wrap; word-wrap:break-word; background:var(--bg);
       border:1px solid var(--line); border-radius:8px; padding:.85rem;
       margin:.6em 0; font:13.5px/1.55 ui-monospace,SFMono-Regular,Menlo,monospace; }
@@ -117,6 +118,43 @@ table.runs-table tbody tr { cursor:pointer; }
 table.runs-table tbody tr:hover { background:rgba(128,128,128,.08); }
 table.runs-table td.problem-cell { max-width:28rem; overflow:hidden; text-overflow:ellipsis;
                                     white-space:nowrap; }
+.metric-stack { display:flex; flex-direction:column; gap:.05rem; white-space:nowrap; }
+.metric-stack strong { color:var(--fg); }
+.metric-stack span { color:var(--muted); font-size:.78rem; }
+
+.architecture-list { display:grid; grid-template-columns:repeat(3,minmax(0,1fr));
+                     gap:.8rem; margin:1.25rem 0; }
+.architecture-card { border:1px solid var(--line); border-radius:10px; padding:.85rem 1rem;
+                     background:var(--card); }
+.architecture-card h3 { font-size:.92rem; margin:0 0 .25rem; }
+.architecture-card p { color:var(--muted); font-size:.8rem; margin:0; }
+.architecture-card .run-status { display:block; margin-top:.65rem; font-size:.8rem;
+                                  font-weight:600; color:var(--muted); }
+.architecture-card.running { border-color:var(--accent); }
+.architecture-card.completed { border-color:var(--ok); }
+.architecture-card.failed { border-color:var(--err); }
+.evaluation-placeholder { border:1px dashed var(--line); border-radius:10px; padding:1rem;
+                          margin:1.25rem 0; background:var(--card); }
+.evaluation-placeholder strong { display:block; margin-bottom:.2rem; }
+.evaluation-placeholder p { margin:0; color:var(--muted); }
+.comparison-table-wrap { overflow-x:auto; margin:1.25rem 0; }
+.comparison-table { width:100%; border-collapse:collapse; }
+.comparison-table th,.comparison-table td { border-bottom:1px solid var(--line);
+                    padding:.65rem .75rem; text-align:left; vertical-align:top; }
+.comparison-table th { color:var(--muted); font-size:.78rem; text-transform:uppercase; }
+.answers-grid { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:1rem;
+                align-items:start; }
+.answer-card { min-width:0; border:1px solid var(--line); border-radius:12px;
+               padding:1rem; background:var(--card); }
+.answer-card h3 { margin:0 0 .2rem; font-size:1rem; }
+.answer-card .answer-meta { color:var(--muted); font-size:.8rem; margin-bottom:.9rem; }
+.answer-card .details-content { overflow-wrap:anywhere; }
+.answer-actions { display:flex; gap:.5rem; margin-top:1rem; }
+.answer-actions a { color:var(--accent); font-size:.82rem; font-weight:600;
+                    text-decoration:none; }
+@media (max-width: 900px) {
+  .architecture-list,.answers-grid { grid-template-columns:1fr; }
+}
 
 .layout { display:grid; grid-template-columns: minmax(260px, 22rem) 1fr; gap:1.5rem;
           align-items:start; margin-top:2rem; }
@@ -300,6 +338,12 @@ function formatDuration(durationMs) {
   if (seconds < 60) return `${seconds.toFixed(1)}s`;
   const minutes = Math.floor(seconds / 60);
   return `${minutes}m ${(seconds % 60).toFixed(0)}s`;
+}
+
+function statusBadge(status) {
+  const value = status || "unknown";
+  const cls = value === "completed" ? "ok" : value === "failed" ? "err" : "warn";
+  return `<span class="badge ${cls}">${escapeHtml(value.replaceAll("_", " "))}</span>`;
 }
 
 function usageTotals(state) {
@@ -561,7 +605,9 @@ def _nav_html(active: str) -> str:
     return (
         '<nav class="topnav">'
         '<div class="topnav-links">'
-        f'<a href="/"{cls("home")}>Home</a>'
+        f'<a href="/"{cls("home")}>Run</a>'
+        f'<a href="/experiments/new"{cls("experiment-new")}>New Experiment</a>'
+        f'<a href="/experiments"{cls("experiments")}>Experiments</a>'
         f'<a href="/history"{cls("history")}>History</a>'
         "</div>"
         '<button type="button" id="theme-toggle" class="theme-toggle" '
@@ -793,6 +839,372 @@ problemEl.addEventListener("keydown", (e) => {
 """
 
 INDEX_HTML = _page(active="home", body=_HOME_BODY, script=_HOME_SCRIPT)
+
+
+# --- New experiment -----------------------------------------------------------
+
+_NEW_EXPERIMENT_BODY = """
+<h1>New Experiment</h1>
+<p class="sub">Run one problem through all three workflow architectures with the same saved configuration.</p>
+<ul class="meta" id="experiment-models"></ul>
+
+<form id="experiment-form">
+  <div class="field">
+    <label for="problem">Problem statement</label>
+    <textarea id="problem" placeholder="Design an AI coding skill that generates a pull request description."
+              required></textarea>
+  </div>
+  <div class="row">
+    <div class="field narrow">
+      <label for="rounds">Max rounds</label>
+      <input type="number" id="rounds" min="1" placeholder="default">
+    </div>
+    <div class="field" style="flex:0 0 auto;">
+      <button type="submit" id="experiment-btn">Run V1, V2 &amp; V3</button>
+    </div>
+  </div>
+</form>
+
+<div class="architecture-list" id="architecture-list"></div>
+<div id="status" class="status hidden"><span class="spinner"></span><span id="status-text"></span></div>
+<div id="error" class="error hidden"></div>
+<div id="experiment-result" class="panel hidden"></div>
+"""
+
+_NEW_EXPERIMENT_SCRIPT = r"""
+const experimentForm = document.getElementById("experiment-form");
+const problemEl = document.getElementById("problem");
+const roundsEl = document.getElementById("rounds");
+const experimentBtn = document.getElementById("experiment-btn");
+const statusEl = document.getElementById("status");
+const statusText = document.getElementById("status-text");
+const architectureList = document.getElementById("architecture-list");
+const resultEl = document.getElementById("experiment-result");
+let experimentVariants = [];
+
+function onConfigLoaded(cfg) {
+  experimentVariants = cfg.variants;
+  roundsEl.placeholder = `default ${cfg.max_rounds}`;
+  document.getElementById("experiment-models").innerHTML = [
+    ["Moderator", cfg.roles.moderator],
+    ["Author", cfg.roles.agent_a],
+    ["Reviewer", cfg.roles.agent_b],
+  ].map(([label, role]) =>
+    `<li><b>${label}:</b> <code>${escapeHtml(role.model)}</code> (${escapeHtml(role.effort)})</li>`
+  ).join("");
+  resetArchitectureCards();
+}
+
+function resetArchitectureCards() {
+  architectureList.innerHTML = experimentVariants.map(variant => `
+    <div class="architecture-card" id="architecture-${variant.id}">
+      <h3>${escapeHtml(variant.label)}</h3>
+      <p>${escapeHtml(variant.description)}</p>
+      <span class="run-status">Waiting</span>
+    </div>`).join("");
+}
+
+function setVariantStatus(variant, status, detail = "") {
+  const card = document.getElementById(`architecture-${variant}`);
+  if (!card) return;
+  card.classList.remove("running", "completed", "failed");
+  card.classList.add(status);
+  const labels = { running: "Running", completed: "Complete", failed: "Failed" };
+  card.querySelector(".run-status").textContent = detail || labels[status] || status;
+}
+
+async function consumeExperimentStream(resp) {
+  const reader = resp.body.getReader();
+  const decoder = new TextDecoder();
+  let buf = "";
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buf += decoder.decode(value, { stream: true });
+    const parts = buf.split("\n\n");
+    buf = parts.pop();
+    for (const part of parts) {
+      const line = part.trim();
+      if (!line.startsWith("data:")) continue;
+      const evt = JSON.parse(line.slice(5).trim());
+      if (evt.type === "error") throw new Error(evt.message);
+      if (evt.type === "experiment_created") {
+        statusText.textContent = `Experiment #${evt.experiment_id} created`;
+      } else if (evt.type === "variant_started") {
+        setVariantStatus(evt.variant, "running");
+        statusText.textContent = `${VARIANT_LABELS[evt.variant]} is running…`;
+      } else if (evt.type === "variant_progress") {
+        setVariantStatus(evt.variant, "running", `Running · ${evt.node.replaceAll("_", " ")}`);
+      } else if (evt.type === "variant_completed") {
+        setVariantStatus(evt.variant, "completed");
+      } else if (evt.type === "variant_failed") {
+        setVariantStatus(evt.variant, "failed", `Failed · ${evt.message}`);
+      } else if (evt.type === "experiment_completed") {
+        statusText.textContent = `Experiment ${evt.status}`;
+        resultEl.innerHTML = `<strong>Experiment ${escapeHtml(evt.status)}</strong><br>
+          <a class="back-link" style="margin:.5rem 0 0" href="${evt.url}">View comparison results →</a>`;
+        resultEl.classList.remove("hidden");
+      }
+    }
+  }
+}
+
+experimentForm.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const problem = problemEl.value.trim();
+  if (!problem) return;
+  resetArchitectureCards();
+  errorEl.classList.add("hidden");
+  resultEl.classList.add("hidden");
+  experimentBtn.disabled = true;
+  statusEl.classList.remove("hidden");
+  statusText.textContent = "Creating experiment…";
+  try {
+    const resp = await fetch("/api/experiments", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        problem,
+        rounds: roundsEl.value ? parseInt(roundsEl.value, 10) : null,
+      }),
+    });
+    await consumeExperimentStream(resp);
+  } catch (error) {
+    errorEl.textContent = String(error.message || error);
+    errorEl.classList.remove("hidden");
+  } finally {
+    experimentBtn.disabled = false;
+    statusEl.classList.add("hidden");
+  }
+});
+"""
+
+NEW_EXPERIMENT_HTML = _page(
+    active="experiment-new", body=_NEW_EXPERIMENT_BODY, script=_NEW_EXPERIMENT_SCRIPT
+)
+
+
+# --- Experiments --------------------------------------------------------------
+
+_EXPERIMENTS_BODY = """
+<h1>Experiments</h1>
+<p class="sub">One problem per row, compared across V1, V2, and V3.</p>
+<div class="history-toolbar">
+  <input type="search" id="experiment-search" placeholder="Search problem statements…">
+</div>
+<div id="error" class="error hidden"></div>
+<table class="runs-table" id="experiments-table">
+  <thead><tr>
+    <th>Created</th><th>Problem</th><th>Status</th><th>Evaluation</th>
+    <th>V1</th><th>V2</th><th>V3</th><th>Total cost</th>
+  </tr></thead>
+  <tbody id="experiments-tbody"><tr><td colspan="8" class="empty-hint">Loading…</td></tr></tbody>
+</table>
+"""
+
+_EXPERIMENTS_SCRIPT = r"""
+const experimentSearch = document.getElementById("experiment-search");
+const experimentsBody = document.getElementById("experiments-tbody");
+let allExperiments = [];
+
+function variantSummary(item) {
+  if (!item) return '<span class="empty-hint">—</span>';
+  if (item.status !== "completed") {
+    return `<div class="metric-stack">${statusBadge(item.status)}<span>${escapeHtml(item.error_message || "")}</span></div>`;
+  }
+  return `<div class="metric-stack">
+    <strong>${escapeHtml(VERDICT_LABELS[item.verdict] || item.verdict || "Complete")}</strong>
+    <span>${formatCost(item.total_cost)} · ${item.total_tokens != null ? item.total_tokens.toLocaleString() + " tok" : "—"}</span>
+    <span>${formatDuration(item.duration_ms)}</span>
+  </div>`;
+}
+
+function renderExperiments() {
+  const query = experimentSearch.value.trim().toLowerCase();
+  const rows = allExperiments.filter(item => !query || item.problem.toLowerCase().includes(query));
+  if (!rows.length) {
+    experimentsBody.innerHTML = `<tr><td colspan="8" class="empty-hint">${allExperiments.length ? "No experiments match your search." : "No experiments yet — create one first."}</td></tr>`;
+    return;
+  }
+  experimentsBody.innerHTML = rows.map(experiment => {
+    const variants = Object.fromEntries(experiment.variants.map(item => [item.variant, item]));
+    const problem = escapeHtml(experiment.problem);
+    return `<tr data-id="${experiment.id}">
+      <td>${new Date(experiment.created_at).toLocaleString()}</td>
+      <td class="problem-cell" title="${problem}">${problem}</td>
+      <td>${statusBadge(experiment.status)}</td>
+      <td><span class="badge warn">${escapeHtml(experiment.evaluation_status.replaceAll("_", " "))}</span></td>
+      <td>${variantSummary(variants["v1-moderated-criteria"])}</td>
+      <td>${variantSummary(variants["v2-posthoc-reviewer"])}</td>
+      <td>${variantSummary(variants["v3-adversarial-reviewer"])}</td>
+      <td>${formatCost(experiment.total_cost)}</td>
+    </tr>`;
+  }).join("");
+}
+
+experimentsBody.addEventListener("click", event => {
+  const row = event.target.closest("tr[data-id]");
+  if (row) location.href = `/experiments/${row.dataset.id}`;
+});
+experimentSearch.addEventListener("input", renderExperiments);
+fetch("/api/experiments").then(response => response.json()).then(experiments => {
+  allExperiments = experiments;
+  renderExperiments();
+}).catch(error => {
+  errorEl.textContent = String(error);
+  errorEl.classList.remove("hidden");
+});
+"""
+
+EXPERIMENTS_HTML = _page(
+    active="experiments", body=_EXPERIMENTS_BODY, script=_EXPERIMENTS_SCRIPT
+)
+
+
+# --- Experiment details -------------------------------------------------------
+
+_EXPERIMENT_DETAIL_BODY = """
+<a class="back-link" href="/experiments">&larr; Back to experiments</a>
+<h1>Experiment comparison</h1>
+<p class="sub" id="experiment-problem">Loading…</p>
+<ul class="meta" id="experiment-meta"></ul>
+<div id="error" class="error hidden"></div>
+
+<div class="evaluation-placeholder">
+  <strong>Quality evaluation</strong>
+  <p id="evaluation-status">Not evaluated</p>
+</div>
+
+<div class="comparison-table-wrap">
+  <table class="comparison-table">
+    <thead><tr><th>Metric</th><th>V1</th><th>V2</th><th>V3</th></tr></thead>
+    <tbody id="comparison-body"><tr><td colspan="4" class="empty-hint">Loading…</td></tr></tbody>
+  </table>
+</div>
+
+<h2>Final responses</h2>
+<div class="answers-grid" id="answers-grid"></div>
+"""
+
+_EXPERIMENT_DETAIL_SCRIPT = r"""
+const experimentId = location.pathname.split("/").filter(Boolean).pop();
+const problemDisplay = document.getElementById("experiment-problem");
+const experimentMeta = document.getElementById("experiment-meta");
+const comparisonBody = document.getElementById("comparison-body");
+const answersGrid = document.getElementById("answers-grid");
+
+function valueFor(item, key) {
+  if (!item || item.status !== "completed") return item ? item.status : "—";
+  if (key === "verdict") return VERDICT_LABELS[item.verdict] || item.verdict;
+  if (key === "rounds") return `${item.rounds ?? "?"} / ${item.max_rounds ?? "?"}`;
+  if (key === "model_calls") return item.model_calls ?? "—";
+  if (key === "total_tokens") return item.total_tokens != null ? item.total_tokens.toLocaleString() : "—";
+  if (key === "total_cost") return formatCost(item.total_cost);
+  if (key === "duration_ms") return formatDuration(item.duration_ms);
+  return "—";
+}
+
+function answerCard(item) {
+  const label = VARIANT_LABELS[item.variant] || item.variant;
+  if (item.status === "failed") {
+    return `<article class="answer-card">
+      <h3>${escapeHtml(label)}</h3>
+      <div class="answer-meta">${statusBadge(item.status)}</div>
+      <div class="error">${escapeHtml(item.error_message || "Unknown execution error")}</div>
+      <div class="answer-actions"><button class="ghost retry-variant" data-variant="${item.variant}">Retry failed variant</button></div>
+    </article>`;
+  }
+  if (item.status !== "completed") {
+    return `<article class="answer-card"><h3>${escapeHtml(label)}</h3><p class="empty-hint">${escapeHtml(item.status)}</p></article>`;
+  }
+  return `<article class="answer-card">
+    <h3>${escapeHtml(label)}</h3>
+    <div class="answer-meta">${escapeHtml(VERDICT_LABELS[item.verdict] || item.verdict)} · ${formatCost(item.total_cost)} · ${formatDuration(item.duration_ms)}</div>
+    <div class="details-content">${renderMarkdown(item.final_answer || "")}</div>
+    <div class="answer-actions"><a href="/history/${item.id}">Open full replay →</a></div>
+  </article>`;
+}
+
+function renderExperiment(experiment) {
+  problemDisplay.textContent = experiment.problem;
+  const roles = experiment.config.roles || {};
+  experimentMeta.innerHTML = [
+    `<li><b>Status:</b> ${escapeHtml(experiment.status)}</li>`,
+    `<li><b>Evaluation:</b> Not evaluated</li>`,
+    `<li><b>Created:</b> ${new Date(experiment.created_at).toLocaleString()}</li>`,
+    `<li><b>Max rounds:</b> ${experiment.max_rounds}</li>`,
+    `<li><b>Total cost:</b> ${formatCost(experiment.total_cost)}</li>`,
+    ...Object.entries(roles).map(([role, settings]) =>
+      `<li><b>${escapeHtml(ROLE_LABELS[role] || role)}:</b> <code>${escapeHtml(settings.model)}</code> (${escapeHtml(settings.effort)})</li>`
+    ),
+  ].join("");
+  document.getElementById("evaluation-status").textContent = "Not evaluated";
+  const variants = Object.fromEntries(experiment.variants.map(item => [item.variant, item]));
+  const ordered = [
+    variants["v1-moderated-criteria"],
+    variants["v2-posthoc-reviewer"],
+    variants["v3-adversarial-reviewer"],
+  ];
+  const metrics = [
+    ["Verdict", "verdict"], ["Rounds", "rounds"], ["Model calls", "model_calls"],
+    ["Tokens", "total_tokens"], ["Cost", "total_cost"], ["Duration", "duration_ms"],
+  ];
+  comparisonBody.innerHTML = metrics.map(([label, key]) =>
+    `<tr><th>${label}</th>${ordered.map(item => `<td>${escapeHtml(String(valueFor(item, key)))}</td>`).join("")}</tr>`
+  ).join("");
+  answersGrid.innerHTML = ordered.map(answerCard).join("");
+}
+
+async function retryVariant(variant, button) {
+  button.disabled = true;
+  button.textContent = "Retrying…";
+  try {
+    const response = await fetch(`/api/experiments/${experimentId}/retry/${variant}`, { method: "POST" });
+    if (!response.ok) {
+      const body = await response.json();
+      throw new Error(body.error || `Retry failed (${response.status})`);
+    }
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      const parts = buffer.split("\n\n");
+      buffer = parts.pop();
+      for (const part of parts) {
+        const line = part.trim();
+        if (!line.startsWith("data:")) continue;
+        const event = JSON.parse(line.slice(5).trim());
+        if (event.type === "experiment_completed") location.reload();
+      }
+    }
+  } catch (error) {
+    errorEl.textContent = String(error.message || error);
+    errorEl.classList.remove("hidden");
+    button.disabled = false;
+    button.textContent = "Retry failed variant";
+  }
+}
+
+answersGrid.addEventListener("click", event => {
+  const button = event.target.closest(".retry-variant");
+  if (button) retryVariant(button.dataset.variant, button);
+});
+
+fetch(`/api/experiments/${experimentId}`).then(response => {
+  if (!response.ok) throw new Error(`Experiment ${experimentId} not found`);
+  return response.json();
+}).then(renderExperiment).catch(error => {
+  errorEl.textContent = String(error.message || error);
+  errorEl.classList.remove("hidden");
+});
+"""
+
+EXPERIMENT_DETAIL_HTML = _page(
+    active="experiments", body=_EXPERIMENT_DETAIL_BODY, script=_EXPERIMENT_DETAIL_SCRIPT
+)
 
 
 # --- History ----------------------------------------------------------------

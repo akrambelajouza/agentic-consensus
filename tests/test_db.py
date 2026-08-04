@@ -65,6 +65,12 @@ class HistoryDbTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             db.save_run("p", {"no_verdict_here": True}, path=self.path)
 
+    def test_provider_errors_are_sanitized_for_display(self) -> None:
+        message = db.sanitize_error("Authorization: Bearer-secret sk-abcdefghijk")
+        self.assertNotIn("Bearer-secret", message)
+        self.assertNotIn("sk-abcdefghijk", message)
+        self.assertIn("[redacted]", message)
+
     def test_list_runs_excludes_state_and_orders_by_recency(self) -> None:
         first = db.save_run("first", self._state(), path=self.path)
         second = db.save_run("second", self._state(), path=self.path)
@@ -154,8 +160,116 @@ class HistoryDbTests(unittest.TestCase):
             self.assertEqual(row["variant_version"], 1)
             self.assertEqual(row["total_tokens"], 18)
             self.assertEqual(row["duration_ms"], 50)
+            self.assertIsNone(row["experiment_id"])
         finally:
             os.remove(legacy_path)
+
+    def test_creates_experiment_slots_and_links_completed_runs(self) -> None:
+        variants = [
+            "v1-moderated-criteria",
+            "v2-posthoc-reviewer",
+            "v3-adversarial-reviewer",
+        ]
+        snapshot = {
+            "max_rounds": 4,
+            "stall_patience": 2,
+            "roles": {"agent_a": {"model": "safe:model", "effort": "high"}},
+        }
+        experiment_id = db.create_experiment(
+            "compare me", 4, snapshot, variants, path=self.path
+        )
+
+        detail = db.get_experiment(experiment_id, path=self.path)
+        self.assertEqual(detail["status"], "running")
+        self.assertEqual(detail["evaluation_status"], "not_evaluated")
+        self.assertEqual(detail["config"], snapshot)
+        self.assertEqual(
+            {item["variant"] for item in detail["variants"]}, set(variants)
+        )
+        self.assertTrue(
+            all(item["status"] == "pending" for item in detail["variants"])
+        )
+
+        for variant in variants:
+            self.assertTrue(
+                db.start_experiment_variant(experiment_id, variant, path=self.path)
+            )
+            state = self._state(variant=variant)
+            db.save_run(
+                "compare me", state, experiment_id=experiment_id, path=self.path
+            )
+
+        detail = db.get_experiment(experiment_id, path=self.path)
+        self.assertEqual(detail["status"], "completed")
+        self.assertEqual(detail["total_cost"], 0.003)
+        self.assertTrue(all(item["id"] for item in detail["variants"]))
+        self.assertTrue(
+            all(item["final_answer"] == "final" for item in detail["variants"])
+        )
+        self.assertTrue(all(item["model_calls"] == 1 for item in detail["variants"]))
+
+    def test_experiment_partial_failure_and_retry(self) -> None:
+        variants = ["v1-moderated-criteria", "v2-posthoc-reviewer"]
+        experiment_id = db.create_experiment(
+            "compare me", 4, {"roles": {}}, variants, path=self.path
+        )
+        first, second = variants
+        db.start_experiment_variant(experiment_id, first, path=self.path)
+        db.save_run(
+            "compare me",
+            self._state(variant=first),
+            experiment_id=experiment_id,
+            path=self.path,
+        )
+        db.start_experiment_variant(experiment_id, second, path=self.path)
+        status = db.fail_experiment_variant(
+            experiment_id, second, "  provider\n failed  ", path=self.path
+        )
+
+        self.assertEqual(status, "partial")
+        failed = next(
+            item
+            for item in db.get_experiment(experiment_id, path=self.path)["variants"]
+            if item["variant"] == second
+        )
+        self.assertEqual(failed["error_message"], "provider failed")
+        self.assertFalse(
+            db.start_experiment_variant(experiment_id, second, path=self.path)
+        )
+        self.assertTrue(
+            db.start_experiment_variant(
+                experiment_id, second, retry=True, path=self.path
+            )
+        )
+        db.save_run(
+            "compare me",
+            self._state(variant=second),
+            experiment_id=experiment_id,
+            path=self.path,
+        )
+        self.assertEqual(
+            db.get_experiment(experiment_id, path=self.path)["status"], "completed"
+        )
+
+    def test_all_failed_experiment_and_compact_list(self) -> None:
+        variants = ["v1-moderated-criteria", "v2-posthoc-reviewer"]
+        experiment_id = db.create_experiment(
+            "compare me", 4, {"roles": {}}, variants, path=self.path
+        )
+        for variant in variants:
+            db.start_experiment_variant(experiment_id, variant, path=self.path)
+            db.fail_experiment_variant(
+                experiment_id, variant, "failed", path=self.path
+            )
+
+        rows = db.list_experiments(path=self.path)
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]["id"], experiment_id)
+        self.assertEqual(rows[0]["status"], "failed")
+        self.assertEqual(rows[0]["evaluation_status"], "not_evaluated")
+        self.assertIsNone(rows[0]["total_cost"])
+        self.assertNotIn("config_json", rows[0])
+        self.assertTrue(all(item["id"] is None for item in rows[0]["variants"]))
 
 
 if __name__ == "__main__":

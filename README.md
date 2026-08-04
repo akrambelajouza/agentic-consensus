@@ -171,7 +171,7 @@ uv sync --extra web
 uv run consensus-web                  # http://127.0.0.1:8000
 ```
 
-Choose a workflow, submit a problem on **Home**, and watch it stream live node by
+Choose a workflow, submit a problem on **Run**, and watch it stream live node by
 node (the same events the CLI logs to stderr, over Server-Sent Events): a flow panel
 on the left, and a details
 panel on the right showing each node's model, effort, duration, token usage,
@@ -187,6 +187,14 @@ Every completed run is saved to a local SQLite file
 searchable, sortable table of past runs. Click one to replay it on its own page,
 identical to how it looked live, reconstructed entirely from the saved state (no
 LLM calls). Runs that error out mid-way are not saved.
+
+Use **New Experiment** to freeze one problem and model configuration, then run V1,
+V2, and V3 sequentially. **Experiments** keeps one row per comparison instead of one
+row per run; its detail page places verdict, calls, tokens, provider cost, duration,
+and final responses side by side with links to each full replay. A failed variant is
+kept as a visible execution slot and can be retried without rerunning successful
+variants. Quality judging is deliberately separate and currently shown as
+**Evaluation: Not evaluated**.
 
 ### Studio — inspect and replay individual steps
 
@@ -235,6 +243,7 @@ open("run.html", "w").write(render_html(result))
 Full docs in [docs/](docs/):
 [architecture](docs/architecture.md) · [variants](docs/variants.md) ·
 [configuration](docs/configuration.md) ·
+[experiments](docs/experiments.md) ·
 [providers](docs/providers.md) ·
 [visualization](docs/visualization.md) ·
 [troubleshooting](docs/troubleshooting.md)
@@ -257,6 +266,6 @@ src/agentic_consensus/
 ├── transcript.py  markdown / HTML / JSON renderers
 ├── __main__.py    CLI runner
 ├── web.py         FastAPI app (`--extra web`): routes, worker thread, persistence
-├── web_templates.py  Home/History/Replay pages — shared CSS/JS, self-contained HTML
-└── db.py          SQLite run history for the web UI
+├── web_templates.py  Run/Experiments/History/Replay pages — self-contained HTML
+└── db.py          SQLite run history and experiment lifecycle
 ```

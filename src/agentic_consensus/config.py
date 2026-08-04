@@ -33,6 +33,9 @@ that ``MAX_ROUNDS=four`` did nothing.
 from __future__ import annotations
 
 import os
+from contextlib import contextmanager
+from contextvars import ContextVar
+from typing import Iterator
 
 # Role -> default `provider:model` spec.
 DEFAULT_MODELS: dict[str, str] = {
@@ -74,6 +77,29 @@ DEFAULT_OPENROUTER_IGNORE_PROVIDERS = ("Azure",)
 VALID_EFFORTS = ("minimal", "low", "medium", "high", "xhigh", "max")
 
 DEFAULT_DB_PATH = "consensus.db"
+
+_SETTINGS_OVERRIDE: ContextVar[dict[str, object] | None] = ContextVar(
+    "consensus_settings_override", default=None
+)
+
+
+def _override_value(*keys: str) -> object | None:
+    value: object = _SETTINGS_OVERRIDE.get()
+    for key in keys:
+        if not isinstance(value, dict) or key not in value:
+            return None
+        value = value[key]
+    return value
+
+
+@contextmanager
+def use_settings(snapshot: dict[str, object]) -> Iterator[None]:
+    """Temporarily use a saved, credential-free settings snapshot in this context."""
+    token = _SETTINGS_OVERRIDE.set(snapshot)
+    try:
+        yield
+    finally:
+        _SETTINGS_OVERRIDE.reset(token)
 
 
 def _load_dotenv() -> None:
@@ -130,23 +156,35 @@ def _check_role(role: str) -> str:
 
 def max_rounds() -> int:
     """Author/reviewer rounds to run before giving up. ``MAX_ROUNDS``."""
+    overridden = _override_value("max_rounds")
+    if isinstance(overridden, int):
+        return overridden
     return _env_int("MAX_ROUNDS", DEFAULT_MAX_ROUNDS, minimum=1)
 
 
 def stall_patience() -> int:
     """Consecutive non-improving reviews that end the loop. ``STALL_PATIENCE``."""
+    overridden = _override_value("stall_patience")
+    if isinstance(overridden, int):
+        return overridden
     return _env_int("STALL_PATIENCE", DEFAULT_STALL_PATIENCE, minimum=1)
 
 
 def model_spec(role: str) -> str:
     """The ``provider:model`` spec for a role. ``<ROLE>_MODEL``."""
     prefix = _check_role(role)
+    overridden = _override_value("roles", role, "model")
+    if isinstance(overridden, str):
+        return overridden
     return os.environ.get(f"{prefix}_MODEL") or DEFAULT_MODELS[role]
 
 
 def max_tokens(role: str) -> int:
     """Output cap for a role. ``<ROLE>_MAX_TOKENS``."""
     prefix = _check_role(role)
+    overridden = _override_value("roles", role, "max_tokens")
+    if isinstance(overridden, int):
+        return overridden
     return _env_int(
         f"{prefix}_MAX_TOKENS", DEFAULT_MAX_TOKENS[role], minimum=256
     )
@@ -155,6 +193,9 @@ def max_tokens(role: str) -> int:
 def effort(role: str) -> str:
     """``reasoning_effort`` for a role. ``<ROLE>_EFFORT``."""
     prefix = _check_role(role)
+    overridden = _override_value("roles", role, "effort")
+    if isinstance(overridden, str):
+        return overridden
     return _env_str(f"{prefix}_EFFORT", DEFAULT_EFFORT, allowed=VALID_EFFORTS)
 
 
