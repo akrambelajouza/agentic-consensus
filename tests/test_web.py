@@ -5,6 +5,13 @@ import unittest
 from unittest.mock import patch
 
 from agentic_consensus import config, db, web
+from agentic_consensus.evaluation import (
+    EvaluationResult,
+    metrics,
+    normalize_criteria,
+    validate_result,
+)
+from agentic_consensus.schemas import Usage
 from agentic_consensus.variants.registry import VARIANTS
 from agentic_consensus.web_templates import (
     EXPERIMENT_DETAIL_HTML,
@@ -120,7 +127,11 @@ class ExperimentWebTests(unittest.TestCase):
     def test_experiment_templates_expose_launch_list_and_comparison(self) -> None:
         self.assertIn("Run V1, V2 &amp; V3", NEW_EXPERIMENT_HTML)
         self.assertIn("One problem per row", EXPERIMENTS_HTML)
-        self.assertIn("Evaluation:</b> Not evaluated", EXPERIMENT_DETAIL_HTML)
+        self.assertIn("Evaluate outputs", EXPERIMENT_DETAIL_HTML)
+        self.assertIn("evaluation-criteria", NEW_EXPERIMENT_HTML)
+        self.assertIn("Experiment details", EXPERIMENT_DETAIL_HTML)
+        self.assertIn('id="evaluation-tab"', EXPERIMENT_DETAIL_HTML)
+        self.assertIn("<th>Evaluated</th>", EXPERIMENTS_HTML)
         self.assertIn("Open full replay", EXPERIMENT_DETAIL_HTML)
         self.assertIn("@media (max-width: 900px)", EXPERIMENT_DETAIL_HTML)
 
@@ -135,6 +146,93 @@ class ConfigSnapshotTests(unittest.TestCase):
             self.assertEqual(config.model_spec("agent_a"), "openai:saved-model")
             self.assertEqual(config.max_rounds(), 7)
         self.assertEqual(config.model_spec("agent_a"), original)
+
+    def test_evaluator_inherits_agent_b_unless_overridden(self) -> None:
+        with patch.dict(os.environ, {
+            "AGENT_B_MODEL": "openai:reviewer", "AGENT_B_MAX_TOKENS": "1234",
+            "AGENT_B_EFFORT": "medium",
+        }, clear=False):
+            for name in ("EVALUATOR_MODEL", "EVALUATOR_MAX_TOKENS", "EVALUATOR_EFFORT"):
+                os.environ.pop(name, None)
+            self.assertEqual(config.model_spec("evaluator"), "openai:reviewer")
+            self.assertEqual(config.max_tokens("evaluator"), 1234)
+            self.assertEqual(config.effort("evaluator"), "medium")
+
+
+class EvaluationTests(unittest.TestCase):
+    def setUp(self) -> None:
+        fd, self.path = tempfile.mkstemp(suffix=".db")
+        os.close(fd)
+        os.remove(self.path)
+        self.env = patch.dict(os.environ, {"CONSENSUS_DB_PATH": self.path})
+        self.env.start()
+        db.init_db()
+
+    def tearDown(self) -> None:
+        self.env.stop()
+        os.remove(self.path)
+
+    def test_normalization_and_deterministic_metrics(self) -> None:
+        criteria = normalize_criteria(" - Inputs and outputs\n\n• Handles errors\n* Secure")
+        self.assertEqual([item["id"] for item in criteria], ["C1", "C2", "C3"])
+        self.assertEqual(criteria[0]["text"], "Inputs and outputs")
+        result = EvaluationResult.model_validate({
+            "criteria": [
+                {"criterion_id": "C1", "status": "satisfied", "evidence": "a", "explanation": "a"},
+                {"criterion_id": "C2", "status": "partial", "evidence": "b", "explanation": "b"},
+                {"criterion_id": "C3", "status": "violated", "evidence": "c", "explanation": "c"},
+            ],
+            "summary": "mixed",
+        })
+        self.assertEqual(metrics(result), {"coverage": 0.5, "passed": False})
+
+    def test_evaluator_result_requires_exact_criterion_ids(self) -> None:
+        criteria = normalize_criteria("First\nSecond")
+        malformed = EvaluationResult.model_validate({
+            "criteria": [
+                {"criterion_id": "C1", "status": "satisfied", "evidence": "a", "explanation": "a"},
+                {"criterion_id": "C3", "status": "satisfied", "evidence": "b", "explanation": "b"},
+            ],
+            "summary": "invalid",
+        })
+        with self.assertRaisesRegex(ValueError, "omitted or invented"):
+            validate_result(malformed, criteria)
+
+    def test_evaluation_stream_persists_separate_usage(self) -> None:
+        variants = list(VARIANTS)
+        snapshot = config.settings()
+        experiment_id = db.create_experiment(
+            "problem", 2, snapshot, variants,
+            normalize_criteria("Clear output"),
+        )
+        for variant in variants:
+            db.start_experiment_variant(experiment_id, variant)
+            db.save_run("problem", {
+                "variant": variant, "variant_version": 1, "verdict": "consensus",
+                "round": 1, "max_rounds": 2, "usage": [], "timings": [],
+                "final_answer": f"answer {variant}",
+            }, experiment_id=experiment_id)
+        claimed = db.start_evaluations(experiment_id)
+        result = EvaluationResult.model_validate({
+            "criteria": [{"criterion_id": "C1", "status": "satisfied", "evidence": "yes", "explanation": "clear"}],
+            "summary": "pass",
+        })
+        usage = Usage(
+            node="evaluation", role="evaluator", provider="openai",
+            model="openai:test", total_tokens=10, cost=0.02,
+            cost_source="provider_reported",
+        )
+        with patch.object(web, "evaluate_response", return_value=(result, usage)):
+            events = ExperimentWebTests._events(web._evaluation_events(
+                db.get_experiment(experiment_id), claimed
+            ))
+        detail = db.get_experiment(experiment_id)
+        self.assertEqual(detail["evaluation_status"], "completed")
+        self.assertEqual(detail["total_cost"], None)
+        self.assertEqual(len(detail["evaluations"]), 3)
+        self.assertTrue(all(item["result"]["passed"] for item in detail["evaluations"]))
+        self.assertEqual(sum(item["total_cost"] for item in detail["evaluations"]), 0.06)
+        self.assertEqual(events[-1]["type"], "evaluation_finished")
 
 
 if __name__ == "__main__":

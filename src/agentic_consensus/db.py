@@ -36,7 +36,8 @@ CREATE TABLE IF NOT EXISTS experiments (
     status             TEXT NOT NULL DEFAULT 'running',
     evaluation_status  TEXT NOT NULL DEFAULT 'not_evaluated',
     max_rounds         INTEGER NOT NULL,
-    config_json        TEXT NOT NULL
+    config_json        TEXT NOT NULL,
+    evaluation_criteria_json TEXT
 );
 CREATE TABLE IF NOT EXISTS runs (
     id               INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -63,6 +64,25 @@ CREATE TABLE IF NOT EXISTS experiment_variants (
     started_at     TEXT,
     completed_at   TEXT,
     PRIMARY KEY (experiment_id, variant)
+);
+CREATE TABLE IF NOT EXISTS evaluations (
+    experiment_id   INTEGER NOT NULL REFERENCES experiments(id) ON DELETE CASCADE,
+    variant         TEXT NOT NULL,
+    run_id          INTEGER NOT NULL REFERENCES runs(id) ON DELETE CASCADE,
+    status          TEXT NOT NULL DEFAULT 'pending',
+    result_json     TEXT,
+    summary         TEXT,
+    evaluator_model TEXT,
+    evaluator_effort TEXT,
+    usage_json      TEXT,
+    total_cost      REAL,
+    total_tokens    INTEGER,
+    duration_ms     INTEGER,
+    error_message   TEXT,
+    started_at      TEXT,
+    completed_at    TEXT,
+    PRIMARY KEY (experiment_id, variant),
+    UNIQUE (run_id)
 );
 CREATE INDEX IF NOT EXISTS idx_runs_created_at ON runs(created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_experiments_created_at ON experiments(created_at DESC);
@@ -97,6 +117,13 @@ def init_db(path: str | None = None) -> None:
     """Create and migrate the local schema. Safe to call on every startup."""
     with _connect(path) as conn:
         conn.executescript(_SCHEMA)
+        experiment_columns = {
+            row["name"] for row in conn.execute("PRAGMA table_info(experiments)")
+        }
+        if "evaluation_criteria_json" not in experiment_columns:
+            conn.execute(
+                "ALTER TABLE experiments ADD COLUMN evaluation_criteria_json TEXT"
+            )
         columns = {row["name"] for row in conn.execute("PRAGMA table_info(runs)")}
         if "total_cost" not in columns:
             conn.execute("ALTER TABLE runs ADD COLUMN total_cost REAL")
@@ -211,6 +238,7 @@ def create_experiment(
     max_rounds: int,
     config_snapshot: dict[str, Any],
     variant_ids: list[str],
+    evaluation_criteria: list[dict[str, str]] | None = None,
     *,
     path: str | None = None,
 ) -> int:
@@ -225,10 +253,16 @@ def create_experiment(
             """
             INSERT INTO experiments
                 (created_at, problem, experiment_type, status, evaluation_status,
-                 max_rounds, config_json)
-            VALUES (?, ?, 'architecture_comparison', 'running', 'not_evaluated', ?, ?)
+                 max_rounds, config_json, evaluation_criteria_json)
+            VALUES (?, ?, 'architecture_comparison', 'running', 'not_evaluated', ?, ?, ?)
             """,
-            (created_at, problem.strip(), max_rounds, json.dumps(config_snapshot)),
+            (
+                created_at,
+                problem.strip(),
+                max_rounds,
+                json.dumps(config_snapshot),
+                json.dumps(evaluation_criteria) if evaluation_criteria else None,
+            ),
         )
         experiment_id = int(cur.lastrowid)
         conn.executemany(
@@ -405,6 +439,137 @@ def _experiment_cost(runs: list[dict[str, Any]]) -> float | None:
     return sum(run["total_cost"] for run in completed)
 
 
+def _refresh_evaluation_status(conn: sqlite3.Connection, experiment_id: int) -> str:
+    statuses = [
+        row["status"]
+        for row in conn.execute(
+            "SELECT status FROM evaluations WHERE experiment_id = ?", (experiment_id,)
+        )
+    ]
+    if statuses and all(status == "completed" for status in statuses):
+        status = "completed"
+    elif statuses and all(status == "failed" for status in statuses):
+        status = "failed"
+    elif statuses and all(status in ("completed", "failed") for status in statuses):
+        status = "partial"
+    else:
+        status = "evaluating"
+    conn.execute(
+        "UPDATE experiments SET evaluation_status = ? WHERE id = ?",
+        (status, experiment_id),
+    )
+    return status
+
+
+def start_evaluations(
+    experiment_id: int, *, path: str | None = None
+) -> list[dict[str, Any]]:
+    """Atomically claim missing/failed evaluations and preserve completed ones."""
+    with _connect(path) as conn:
+        # Serialize the status check and claim so two browser clicks cannot both
+        # start paid evaluator calls for the same outputs.
+        conn.execute("BEGIN IMMEDIATE")
+        experiment = conn.execute(
+            "SELECT status, evaluation_status, evaluation_criteria_json "
+            "FROM experiments WHERE id = ?", (experiment_id,)
+        ).fetchone()
+        if experiment is None:
+            raise LookupError(f"experiment {experiment_id} not found")
+        if experiment["status"] != "completed":
+            raise ValueError("all workflow variants must complete before evaluation")
+        if not experiment["evaluation_criteria_json"]:
+            raise ValueError("experiment has no evaluation criteria")
+        if experiment["evaluation_status"] == "evaluating":
+            raise RuntimeError("evaluation is already running")
+        if experiment["evaluation_status"] == "completed":
+            raise RuntimeError("evaluation is already completed")
+        runs = conn.execute(
+            "SELECT id, variant FROM runs WHERE experiment_id = ? ORDER BY variant",
+            (experiment_id,),
+        ).fetchall()
+        for run in runs:
+            conn.execute(
+                "INSERT OR IGNORE INTO evaluations "
+                "(experiment_id, variant, run_id, status) VALUES (?, ?, ?, 'pending')",
+                (experiment_id, run["variant"], run["id"]),
+            )
+        claimed = [
+            dict(row)
+            for row in conn.execute(
+                "SELECT e.variant, e.run_id, r.state_json FROM evaluations e "
+                "JOIN runs r ON r.id = e.run_id "
+                "WHERE e.experiment_id = ? AND e.status IN ('pending', 'failed') "
+                "ORDER BY e.variant", (experiment_id,)
+            )
+        ]
+        now = _now()
+        conn.execute(
+            "UPDATE evaluations SET status='running', error_message=NULL, "
+            "started_at=?, completed_at=NULL WHERE experiment_id=? "
+            "AND status IN ('pending', 'failed')", (now, experiment_id),
+        )
+        conn.execute(
+            "UPDATE experiments SET evaluation_status='evaluating' WHERE id=?",
+            (experiment_id,),
+        )
+    for item in claimed:
+        state = json.loads(item.pop("state_json"))
+        item["final_answer"] = state.get("final_answer") or ""
+    return claimed
+
+
+def save_evaluation(
+    experiment_id: int,
+    variant: str,
+    result: dict[str, Any],
+    usage: dict[str, Any],
+    duration_ms: int,
+    evaluator_settings: dict[str, Any],
+    *,
+    path: str | None = None,
+) -> str:
+    with _connect(path) as conn:
+        cur = conn.execute(
+            """UPDATE evaluations SET status='completed', result_json=?, summary=?,
+               evaluator_model=?, evaluator_effort=?, usage_json=?, total_cost=?,
+               total_tokens=?, duration_ms=?, error_message=NULL, completed_at=?
+               WHERE experiment_id=? AND variant=? AND status='running'""",
+            (
+                json.dumps(result), result.get("summary"), evaluator_settings.get("model"),
+                evaluator_settings.get("effort"), json.dumps(usage), usage.get("cost"),
+                usage.get("total_tokens"), duration_ms, _now(), experiment_id, variant,
+            ),
+        )
+        if not cur.rowcount:
+            raise ValueError("evaluation is not running")
+        return _refresh_evaluation_status(conn, experiment_id)
+
+
+def fail_evaluation(
+    experiment_id: int,
+    variant: str,
+    error: object,
+    duration_ms: int | None = None,
+    evaluator_settings: dict[str, Any] | None = None,
+    *,
+    path: str | None = None,
+) -> str:
+    evaluator_settings = evaluator_settings or {}
+    with _connect(path) as conn:
+        cur = conn.execute(
+            "UPDATE evaluations SET status='failed', error_message=?, duration_ms=?, "
+            "evaluator_model=?, evaluator_effort=?, completed_at=? "
+            "WHERE experiment_id=? AND variant=? AND status='running'",
+            (
+                sanitize_error(error), duration_ms, evaluator_settings.get("model"),
+                evaluator_settings.get("effort"), _now(), experiment_id, variant,
+            ),
+        )
+        if not cur.rowcount:
+            raise ValueError("evaluation is not running")
+        return _refresh_evaluation_status(conn, experiment_id)
+
+
 def list_experiments(
     *, limit: int = 200, path: str | None = None
 ) -> list[dict[str, Any]]:
@@ -440,6 +605,7 @@ def list_experiments(
         experiment["variants"] = grouped[experiment["id"]]
         experiment["total_cost"] = _experiment_cost(experiment["variants"])
         experiment.pop("config_json", None)
+        experiment.pop("evaluation_criteria_json", None)
     return experiments
 
 
@@ -467,6 +633,10 @@ def get_experiment(
             """,
             (experiment_id,),
         ).fetchall()
+        evaluation_rows = conn.execute(
+            "SELECT * FROM evaluations WHERE experiment_id = ? ORDER BY variant",
+            (experiment_id,),
+        ).fetchall()
     variants = []
     for row in variant_rows:
         item = dict(row)
@@ -480,6 +650,15 @@ def get_experiment(
             item["model_calls"] = None
         variants.append(item)
     experiment["config"] = json.loads(experiment.pop("config_json"))
+    raw_criteria = experiment.pop("evaluation_criteria_json")
+    experiment["evaluation_criteria"] = json.loads(raw_criteria) if raw_criteria else []
     experiment["variants"] = variants
     experiment["total_cost"] = _experiment_cost(variants)
+    evaluations = []
+    for row in evaluation_rows:
+        item = dict(row)
+        item["result"] = json.loads(item.pop("result_json")) if item["result_json"] else None
+        item["usage"] = json.loads(item.pop("usage_json")) if item["usage_json"] else None
+        evaluations.append(item)
+    experiment["evaluations"] = evaluations
     return experiment

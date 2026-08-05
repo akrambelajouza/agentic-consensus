@@ -137,6 +137,32 @@ table.runs-table td.problem-cell { max-width:28rem; overflow:hidden; text-overfl
                           margin:1.25rem 0; background:var(--card); }
 .evaluation-placeholder strong { display:block; margin-bottom:.2rem; }
 .evaluation-placeholder p { margin:0; color:var(--muted); }
+.tab-shell { margin-top:1.5rem; border:1px solid var(--line); border-radius:12px;
+             background:var(--card); overflow:hidden; box-shadow:0 4px 18px rgba(0,0,0,.08); }
+.tabs { display:flex; gap:.35rem; padding:.65rem .75rem 0; border-bottom:1px solid var(--line);
+        background:rgba(128,128,128,.07); overflow-x:auto; }
+.tab-button { border:1px solid transparent; border-bottom:0; border-radius:8px 8px 0 0;
+              background:transparent; color:var(--muted); padding:.7rem 1rem; }
+.tab-button:hover { color:var(--fg); background:rgba(128,128,128,.08); }
+.tab-button.active { color:var(--accent); background:var(--card); border-color:var(--line);
+                     box-shadow:inset 0 3px 0 var(--accent); font-weight:700;
+                     position:relative; bottom:-1px; }
+.tab-panel { padding:1.25rem; }
+.tab-status { display:inline-block; margin-left:.4rem; padding:.15rem .45rem; border-radius:999px;
+              font-size:.7rem; line-height:1.2; font-weight:700; }
+.tab-status.done { color:var(--ok); background:rgba(46,160,67,.13); }
+.tab-status.waiting { color:var(--warn); background:rgba(210,153,34,.15); }
+.evaluation-header { display:flex; align-items:center; justify-content:space-between;
+                     gap:1rem; flex-wrap:wrap; }
+.evaluation-controls { display:flex; align-items:center; gap:.75rem; flex-wrap:wrap; }
+.evaluation-controls #evaluation-status { white-space:nowrap; }
+.criteria-list { margin:.6rem 0 1rem; padding-left:1.5rem; }
+.evaluation-actions { display:flex; }
+.criterion-status { font-weight:700; text-transform:capitalize; }
+.criterion-status.satisfied { color:var(--ok); }
+.criterion-status.partial { color:var(--warn); }
+.criterion-status.violated { color:var(--err); }
+.field-help { color:var(--muted); font-size:.8rem; margin:.3rem 0 0; }
 .comparison-table-wrap { overflow-x:auto; margin:1.25rem 0; }
 .comparison-table { width:100%; border-collapse:collapse; }
 .comparison-table th,.comparison-table td { border-bottom:1px solid var(--line);
@@ -229,7 +255,7 @@ const VERDICT_LABELS = {
   no_consensus: "No consensus — round limit reached",
   stalled: "No consensus — review stalled",
 };
-const ROLE_LABELS = { moderator: "Moderator", agent_a: "Agent A — author", agent_b: "Agent B — reviewer" };
+const ROLE_LABELS = { moderator: "Moderator", agent_a: "Agent A — author", agent_b: "Agent B — reviewer", evaluator: "Independent evaluator" };
 const VARIANT_LABELS = {
   "v1-moderated-criteria": "V1 — Moderated criteria",
   "v2-posthoc-reviewer": "V2 — Post-hoc reviewer",
@@ -854,6 +880,11 @@ _NEW_EXPERIMENT_BODY = """
     <textarea id="problem" placeholder="Design an AI coding skill that generates a pull request description."
               required></textarea>
   </div>
+  <div class="field">
+    <label for="evaluation-criteria">Evaluation criteria (optional)</label>
+    <textarea id="evaluation-criteria" placeholder="Handles edge cases explicitly&#10;Defines inputs and outputs&#10;Includes security considerations"></textarea>
+    <p class="field-help">One criterion per line. These criteria are frozen with the experiment and hidden from all three workflows.</p>
+  </div>
   <div class="row">
     <div class="field narrow">
       <label for="rounds">Max rounds</label>
@@ -875,6 +906,7 @@ _NEW_EXPERIMENT_SCRIPT = r"""
 const experimentForm = document.getElementById("experiment-form");
 const problemEl = document.getElementById("problem");
 const roundsEl = document.getElementById("rounds");
+const criteriaEl = document.getElementById("evaluation-criteria");
 const experimentBtn = document.getElementById("experiment-btn");
 const statusEl = document.getElementById("status");
 const statusText = document.getElementById("status-text");
@@ -889,6 +921,7 @@ function onConfigLoaded(cfg) {
     ["Moderator", cfg.roles.moderator],
     ["Author", cfg.roles.agent_a],
     ["Reviewer", cfg.roles.agent_b],
+    ["Evaluator (used on request)", cfg.roles.evaluator],
   ].map(([label, role]) =>
     `<li><b>${label}:</b> <code>${escapeHtml(role.model)}</code> (${escapeHtml(role.effort)})</li>`
   ).join("");
@@ -966,6 +999,7 @@ experimentForm.addEventListener("submit", async (event) => {
       body: JSON.stringify({
         problem,
         rounds: roundsEl.value ? parseInt(roundsEl.value, 10) : null,
+        evaluation_criteria: criteriaEl.value,
       }),
     });
     await consumeExperimentStream(resp);
@@ -995,7 +1029,7 @@ _EXPERIMENTS_BODY = """
 <div id="error" class="error hidden"></div>
 <table class="runs-table" id="experiments-table">
   <thead><tr>
-    <th>Created</th><th>Problem</th><th>Status</th><th>Evaluation</th>
+    <th>Created</th><th>Problem</th><th>Status</th><th>Evaluated</th>
     <th>V1</th><th>V2</th><th>V3</th><th>Total cost</th>
   </tr></thead>
   <tbody id="experiments-tbody"><tr><td colspan="8" class="empty-hint">Loading…</td></tr></tbody>
@@ -1033,7 +1067,8 @@ function renderExperiments() {
       <td>${new Date(experiment.created_at).toLocaleString()}</td>
       <td class="problem-cell" title="${problem}">${problem}</td>
       <td>${statusBadge(experiment.status)}</td>
-      <td><span class="badge warn">${escapeHtml(experiment.evaluation_status.replaceAll("_", " "))}</span></td>
+      <td><span class="badge ${experiment.evaluation_status === "completed" ? "ok" : "warn"}"
+                title="${escapeHtml(experiment.evaluation_status.replaceAll("_", " "))}">${experiment.evaluation_status === "completed" ? "Done" : "Waiting"}</span></td>
       <td>${variantSummary(variants["v1-moderated-criteria"])}</td>
       <td>${variantSummary(variants["v2-posthoc-reviewer"])}</td>
       <td>${variantSummary(variants["v3-adversarial-reviewer"])}</td>
@@ -1070,20 +1105,50 @@ _EXPERIMENT_DETAIL_BODY = """
 <ul class="meta" id="experiment-meta"></ul>
 <div id="error" class="error hidden"></div>
 
-<div class="evaluation-placeholder">
-  <strong>Quality evaluation</strong>
-  <p id="evaluation-status">Not evaluated</p>
+<div class="tab-shell">
+<div class="tabs" role="tablist" aria-label="Experiment report sections">
+  <button type="button" class="tab-button active" id="experiment-tab"
+          role="tab" aria-selected="true" aria-controls="experiment-panel">
+    Experiment details
+  </button>
+  <button type="button" class="tab-button" id="evaluation-tab"
+          role="tab" aria-selected="false" aria-controls="evaluation-panel">
+    Evaluation <span class="tab-status waiting" id="evaluation-tab-status">Waiting</span>
+  </button>
 </div>
 
-<div class="comparison-table-wrap">
-  <table class="comparison-table">
-    <thead><tr><th>Metric</th><th>V1</th><th>V2</th><th>V3</th></tr></thead>
-    <tbody id="comparison-body"><tr><td colspan="4" class="empty-hint">Loading…</td></tr></tbody>
-  </table>
-</div>
+<section id="experiment-panel" class="tab-panel" role="tabpanel" aria-labelledby="experiment-tab">
+  <div class="comparison-table-wrap">
+    <table class="comparison-table">
+      <thead><tr><th>Metric</th><th>V1</th><th>V2</th><th>V3</th></tr></thead>
+      <tbody id="comparison-body"><tr><td colspan="4" class="empty-hint">Loading…</td></tr></tbody>
+    </table>
+  </div>
 
-<h2>Final responses</h2>
-<div class="answers-grid" id="answers-grid"></div>
+  <h2>Final responses</h2>
+  <div class="answers-grid" id="answers-grid"></div>
+</section>
+
+<section id="evaluation-panel" class="tab-panel hidden" role="tabpanel" aria-labelledby="evaluation-tab">
+  <div class="evaluation-placeholder">
+    <div class="evaluation-header">
+      <strong>Quality evaluation</strong>
+      <div class="evaluation-controls">
+        <div class="evaluation-actions" id="evaluation-actions"></div>
+        <p id="evaluation-status">Not evaluated</p>
+      </div>
+    </div>
+    <ol class="criteria-list" id="criteria-list"></ol>
+  </div>
+
+  <div class="comparison-table-wrap hidden" id="evaluation-results">
+    <table class="comparison-table">
+      <thead><tr><th>Criterion</th><th>V1</th><th>V2</th><th>V3</th></tr></thead>
+      <tbody id="evaluation-body"></tbody>
+    </table>
+  </div>
+</section>
+</div>
 """
 
 _EXPERIMENT_DETAIL_SCRIPT = r"""
@@ -1092,6 +1157,24 @@ const problemDisplay = document.getElementById("experiment-problem");
 const experimentMeta = document.getElementById("experiment-meta");
 const comparisonBody = document.getElementById("comparison-body");
 const answersGrid = document.getElementById("answers-grid");
+const criteriaList = document.getElementById("criteria-list");
+const evaluationActions = document.getElementById("evaluation-actions");
+const evaluationResults = document.getElementById("evaluation-results");
+const evaluationBody = document.getElementById("evaluation-body");
+let currentExperiment = null;
+
+function selectTab(name) {
+  const evaluationSelected = name === "evaluation";
+  document.getElementById("experiment-panel").classList.toggle("hidden", evaluationSelected);
+  document.getElementById("evaluation-panel").classList.toggle("hidden", !evaluationSelected);
+  document.getElementById("experiment-tab").classList.toggle("active", !evaluationSelected);
+  document.getElementById("evaluation-tab").classList.toggle("active", evaluationSelected);
+  document.getElementById("experiment-tab").setAttribute("aria-selected", String(!evaluationSelected));
+  document.getElementById("evaluation-tab").setAttribute("aria-selected", String(evaluationSelected));
+}
+
+document.getElementById("experiment-tab").addEventListener("click", () => selectTab("experiment"));
+document.getElementById("evaluation-tab").addEventListener("click", () => selectTab("evaluation"));
 
 function valueFor(item, key) {
   if (!item || item.status !== "completed") return item ? item.status : "—";
@@ -1126,11 +1209,12 @@ function answerCard(item) {
 }
 
 function renderExperiment(experiment) {
+  currentExperiment = experiment;
   problemDisplay.textContent = experiment.problem;
   const roles = experiment.config.roles || {};
   experimentMeta.innerHTML = [
     `<li><b>Status:</b> ${escapeHtml(experiment.status)}</li>`,
-    `<li><b>Evaluation:</b> Not evaluated</li>`,
+    `<li><b>Evaluation:</b> ${escapeHtml(experiment.evaluation_status.replaceAll("_", " "))}</li>`,
     `<li><b>Created:</b> ${new Date(experiment.created_at).toLocaleString()}</li>`,
     `<li><b>Max rounds:</b> ${experiment.max_rounds}</li>`,
     `<li><b>Total cost:</b> ${formatCost(experiment.total_cost)}</li>`,
@@ -1138,7 +1222,7 @@ function renderExperiment(experiment) {
       `<li><b>${escapeHtml(ROLE_LABELS[role] || role)}:</b> <code>${escapeHtml(settings.model)}</code> (${escapeHtml(settings.effort)})</li>`
     ),
   ].join("");
-  document.getElementById("evaluation-status").textContent = "Not evaluated";
+  renderEvaluation(experiment);
   const variants = Object.fromEntries(experiment.variants.map(item => [item.variant, item]));
   const ordered = [
     variants["v1-moderated-criteria"],
@@ -1154,6 +1238,91 @@ function renderExperiment(experiment) {
   ).join("");
   answersGrid.innerHTML = ordered.map(answerCard).join("");
 }
+
+function evaluationCell(record, criterionId) {
+  if (!record) return '<span class="empty-hint">Not evaluated</span>';
+  if (record.status === "failed") return `<span class="criterion-status violated">Failed</span><br><small>${escapeHtml(record.error_message || "")}</small>`;
+  if (record.status !== "completed") return escapeHtml(record.status);
+  const item = record.result.criteria.find(value => value.criterion_id === criterionId);
+  if (!item) return "—";
+  return `<span class="criterion-status ${item.status}">${escapeHtml(item.status)}</span><br><small><b>Evidence:</b> ${escapeHtml(item.evidence)}</small><br><small>${escapeHtml(item.explanation)}</small>`;
+}
+
+function renderEvaluation(experiment) {
+  const statusEl = document.getElementById("evaluation-status");
+  const criteria = experiment.evaluation_criteria || [];
+  criteriaList.innerHTML = criteria.map(item => `<li><b>${escapeHtml(item.id)}</b> — ${escapeHtml(item.text)}</li>`).join("");
+  const records = Object.fromEntries((experiment.evaluations || []).map(item => [item.variant, item]));
+  const order = ["v1-moderated-criteria", "v2-posthoc-reviewer", "v3-adversarial-reviewer"];
+  const tabStatus = document.getElementById("evaluation-tab-status");
+  const evaluationDone = experiment.evaluation_status === "completed";
+  tabStatus.textContent = evaluationDone ? "Done" : "Waiting";
+  tabStatus.classList.toggle("done", evaluationDone);
+  tabStatus.classList.toggle("waiting", !evaluationDone);
+  tabStatus.title = `Evaluation status: ${experiment.evaluation_status.replaceAll("_", " ")}`;
+  if (!criteria.length) {
+    statusEl.textContent = "Not evaluated — no criteria were supplied.";
+    evaluationActions.innerHTML = "";
+    evaluationResults.classList.add("hidden");
+    return;
+  }
+  statusEl.textContent = experiment.evaluation_status.replaceAll("_", " ");
+  const canEvaluate = experiment.status === "completed" && experiment.evaluation_status !== "completed";
+  evaluationActions.innerHTML = canEvaluate
+    ? `<button id="evaluate-btn">${["partial", "failed"].includes(experiment.evaluation_status) ? "Retry failed evaluations" : "Evaluate outputs"}</button>`
+    : (experiment.status !== "completed" ? '<span class="empty-hint">Complete all workflow variants before evaluating.</span>' : "");
+  const completed = Object.values(records).filter(item => item.status === "completed");
+  if (!completed.length && !Object.keys(records).length) {
+    evaluationResults.classList.add("hidden");
+    return;
+  }
+  evaluationResults.classList.remove("hidden");
+  const summary = `<tr><th>Result</th>${order.map(id => {
+    const record = records[id];
+    if (!record || record.status !== "completed") return `<td>${record ? escapeHtml(record.status) : "—"}</td>`;
+    return `<td><b>${record.result.passed ? "Pass" : "Fail"}</b><br>${Math.round(record.result.coverage * 100)}% coverage<br>${record.total_tokens != null ? record.total_tokens.toLocaleString() + " tokens" : "—"} · ${formatDuration(record.duration_ms)} · ${formatCost(record.total_cost)}</td>`;
+  }).join("")}</tr>`;
+  evaluationBody.innerHTML = summary + criteria.map(criterion =>
+    `<tr><th>${escapeHtml(criterion.id)} — ${escapeHtml(criterion.text)}</th>${order.map(id => `<td>${evaluationCell(records[id], criterion.id)}</td>`).join("")}</tr>`
+  ).join("");
+}
+
+async function evaluateOutputs(button) {
+  button.disabled = true;
+  button.textContent = "Evaluating…";
+  try {
+    const response = await fetch(`/api/experiments/${experimentId}/evaluate`, { method: "POST" });
+    if (!response.ok) {
+      const body = await response.json();
+      throw new Error(body.error || `Evaluation failed (${response.status})`);
+    }
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      const parts = buffer.split("\n\n"); buffer = parts.pop();
+      for (const part of parts) {
+        const line = part.trim(); if (!line.startsWith("data:")) continue;
+        const event = JSON.parse(line.slice(5).trim());
+        document.getElementById("evaluation-status").textContent = event.type === "evaluation_started"
+          ? `Evaluating ${VARIANT_LABELS[event.variant]}…`
+          : (event.type === "evaluation_failed" ? `${VARIANT_LABELS[event.variant]} failed: ${event.message}` : "Evaluating…");
+        if (event.type === "evaluation_finished") location.reload();
+      }
+    }
+  } catch (error) {
+    errorEl.textContent = String(error.message || error); errorEl.classList.remove("hidden");
+    button.disabled = false; button.textContent = "Evaluate outputs";
+  }
+}
+
+evaluationActions.addEventListener("click", event => {
+  const button = event.target.closest("#evaluate-btn");
+  if (button) evaluateOutputs(button);
+});
 
 async function retryVariant(variant, button) {
   button.disabled = true;

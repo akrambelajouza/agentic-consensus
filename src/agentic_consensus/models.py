@@ -192,6 +192,15 @@ def agent_b_llm() -> BaseChatModel:
     return build_llm("agent_b")
 
 
+def evaluator_llm() -> BaseChatModel:
+    """Independent, rubric-based judge used only after an experiment completes."""
+    return build_llm("evaluator")
+
+
 def active_models() -> dict[str, str]:
     """Resolved spec per role — handy for logging and for transcript headers."""
-    return {role: resolve_spec(role) for role in DEFAULT_MODELS}
+    return {
+        role: resolve_spec(role)
+        for role in DEFAULT_MODELS
+        if role != "evaluator"
+    }

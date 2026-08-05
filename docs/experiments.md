@@ -6,10 +6,11 @@ configuration, then executes V1, V2, and V3 sequentially.
 
 ## Run a comparison
 
-Start the web app and open **New Experiment**. Enter the problem once and choose the
-round limit. The page shows the moderator, author, and reviewer settings that will be
-saved with the experiment, then reports each architecture as waiting, running,
-complete, or failed.
+Start the web app and open **New Experiment**. Enter the problem once, choose the
+round limit, and optionally enter one evaluation criterion per line. The criteria
+are normalized to stable IDs (`C1`, `C2`, …), frozen with the experiment, and never
+shown to the three workflows. The page reports each architecture as waiting,
+running, complete, or failed.
 
 Experiments continue after an individual failure. Successful runs are preserved and
 a failed architecture can be retried from the comparison page using the original
@@ -28,12 +29,20 @@ verdict, provider-reported cost, tokens, and duration. The detail page compares:
 Provider cost is never guessed. If any completed run lacks provider-reported cost,
 the experiment total is unavailable rather than a misleading partial sum.
 
-## Evaluation boundary
+## Evaluate quality
 
-Operational comparison is implemented; output-quality judging is intentionally not.
-Every report therefore says **Evaluation: Not evaluated**. A later independent
-rubric-based evaluator can attach quality results without confusing a workflow's own
-review score with a shared cross-architecture metric.
+When criteria exist and all three workflows have completed, the comparison page
+offers **Evaluate outputs**. The evaluator receives three separate requests. Each
+contains only the original problem, frozen rubric, and one anonymized final answer;
+it never sees the architecture, transcript, internal score, cost, or competing
+answers.
+
+Each criterion is marked `satisfied`, `partial`, or `violated`, with evidence and an
+explanation. Coverage is deterministic (`1`, `0.5`, and `0` respectively), and an
+answer passes only when every criterion is satisfied. Successful evaluations are
+preserved if another call fails, and the retry action evaluates only missing or
+failed outputs. Evaluator usage and cost are displayed separately and never added to
+workflow cost.
 
 Existing History rows are not inferred into experiments by matching problem text.
 Standalone runs remain standalone because similar text does not prove controlled

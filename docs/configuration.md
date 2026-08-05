@@ -56,6 +56,7 @@ noisy round to round.
 | `MODERATOR_MODEL` | `anthropic:claude-opus-5` |
 | `AGENT_A_MODEL` | `anthropic:claude-opus-5` |
 | `AGENT_B_MODEL` | `anthropic:claude-sonnet-5` |
+| `EVALUATOR_MODEL` | inherits `AGENT_B_MODEL` |
 
 Specs are `provider:model` over `anthropic`, `openai`, or `openrouter` — see
 [providers.md](providers.md). `.env.example` ships with the OpenRouter equivalents
@@ -68,6 +69,7 @@ filled in, since one key there reaches both vendors.
 | `MODERATOR_MAX_TOKENS` | `8000` | 256 |
 | `AGENT_A_MAX_TOKENS` | `16000` | 256 |
 | `AGENT_B_MAX_TOKENS` | `8000` | 256 |
+| `EVALUATOR_MAX_TOKENS` | inherits Agent B | 256 |
 
 Agent A gets double because it writes the actual deliverable every round, in full.
 
@@ -82,6 +84,7 @@ will truncate mid-sentence. That's why these numbers look generous.
 | `MODERATOR_EFFORT` | `high` |
 | `AGENT_A_EFFORT` | `high` |
 | `AGENT_B_EFFORT` | `high` |
+| `EVALUATOR_EFFORT` | inherits Agent B |
 
 Passed through as `reasoning_effort`. The two providers accept different vocabularies:
 

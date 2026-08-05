@@ -12,12 +12,15 @@ Variable                         Default    Effect
 ``MODERATOR_MODEL``              see below  ``provider:model`` spec
 ``AGENT_A_MODEL``                see below  ``provider:model`` spec
 ``AGENT_B_MODEL``                see below  ``provider:model`` spec
+``EVALUATOR_MODEL``              Agent B    independent evaluator model
 ``MODERATOR_MAX_TOKENS``         ``8000``   Output cap for the moderator
 ``AGENT_A_MAX_TOKENS``           ``16000``  Output cap for the author
 ``AGENT_B_MAX_TOKENS``           ``8000``   Output cap for the reviewer
+``EVALUATOR_MAX_TOKENS``         Agent B    Output cap for evaluation
 ``MODERATOR_EFFORT``             ``high``   ``reasoning_effort`` for the moderator
 ``AGENT_A_EFFORT``               ``high``   ``reasoning_effort`` for the author
 ``AGENT_B_EFFORT``               ``high``   ``reasoning_effort`` for the reviewer
+``EVALUATOR_EFFORT``             Agent B    ``reasoning_effort`` for evaluation
 ``OPENROUTER_IGNORE_PROVIDERS``  ``Azure``  Backends kept out of OpenRouter routing
 ``CONSENSUS_DB_PATH``            see below  SQLite file for the web UI's run history
 ===============================  =========  ==================================
@@ -42,6 +45,7 @@ DEFAULT_MODELS: dict[str, str] = {
     "moderator": "anthropic:claude-opus-5",
     "agent_a": "anthropic:claude-opus-5",
     "agent_b": "anthropic:claude-sonnet-5",
+    "evaluator": "anthropic:claude-sonnet-5",
 }
 
 # Role -> env var prefix. Every per-role setting is `<PREFIX>_<SETTING>`.
@@ -49,6 +53,7 @@ ROLE_PREFIXES: dict[str, str] = {
     "moderator": "MODERATOR",
     "agent_a": "AGENT_A",
     "agent_b": "AGENT_B",
+    "evaluator": "EVALUATOR",
 }
 
 DEFAULT_MAX_ROUNDS = 4
@@ -62,6 +67,7 @@ DEFAULT_MAX_TOKENS: dict[str, int] = {
     "moderator": 8_000,
     "agent_a": 16_000,
     "agent_b": 8_000,
+    "evaluator": 8_000,
 }
 
 DEFAULT_EFFORT = "high"
@@ -176,7 +182,12 @@ def model_spec(role: str) -> str:
     overridden = _override_value("roles", role, "model")
     if isinstance(overridden, str):
         return overridden
-    return os.environ.get(f"{prefix}_MODEL") or DEFAULT_MODELS[role]
+    value = os.environ.get(f"{prefix}_MODEL")
+    if value:
+        return value
+    if role == "evaluator":
+        return model_spec("agent_b")
+    return DEFAULT_MODELS[role]
 
 
 def max_tokens(role: str) -> int:
@@ -185,9 +196,9 @@ def max_tokens(role: str) -> int:
     overridden = _override_value("roles", role, "max_tokens")
     if isinstance(overridden, int):
         return overridden
-    return _env_int(
-        f"{prefix}_MAX_TOKENS", DEFAULT_MAX_TOKENS[role], minimum=256
-    )
+    if role == "evaluator" and not os.environ.get(f"{prefix}_MAX_TOKENS", "").strip():
+        return max_tokens("agent_b")
+    return _env_int(f"{prefix}_MAX_TOKENS", DEFAULT_MAX_TOKENS[role], minimum=256)
 
 
 def effort(role: str) -> str:
@@ -196,6 +207,8 @@ def effort(role: str) -> str:
     overridden = _override_value("roles", role, "effort")
     if isinstance(overridden, str):
         return overridden
+    if role == "evaluator" and not os.environ.get(f"{prefix}_EFFORT", "").strip():
+        return effort("agent_b")
     return _env_str(f"{prefix}_EFFORT", DEFAULT_EFFORT, allowed=VALID_EFFORTS)
 
 

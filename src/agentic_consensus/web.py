@@ -29,6 +29,7 @@ from fastapi.responses import HTMLResponse, JSONResponse, Response, StreamingRes
 from pydantic import BaseModel
 
 from . import config, db
+from .evaluation import evaluate_response, metrics, normalize_criteria
 from .schemas import Usage
 from .transcript import render_html, render_json, render_markdown
 from .variants.registry import DEFAULT_VARIANT, VARIANTS, get_variant
@@ -60,6 +61,7 @@ class RunRequest(BaseModel):
 class ExperimentRequest(BaseModel):
     problem: str
     rounds: int | None = None
+    evaluation_criteria: str | None = None
 
 
 class ExportRequest(BaseModel):
@@ -186,7 +188,9 @@ def _run_events(problem: str, rounds: int | None, variant_id: str) -> Iterator[s
         yield _sse(item)
 
 
-def _experiment_events(problem: str, rounds: int | None) -> Iterator[str]:
+def _experiment_events(
+    problem: str, rounds: int | None, evaluation_criteria: str | None = None
+) -> Iterator[str]:
     q: "queue.Queue[dict[str, Any] | None]" = queue.Queue()
 
     def worker() -> None:
@@ -195,8 +199,9 @@ def _experiment_events(problem: str, rounds: int | None) -> Iterator[str]:
             effective_rounds = rounds if rounds is not None else snapshot["max_rounds"]
             snapshot["max_rounds"] = effective_rounds
             variant_ids = list(VARIANTS)
+            criteria = normalize_criteria(evaluation_criteria)
             experiment_id = db.create_experiment(
-                problem, effective_rounds, snapshot, variant_ids
+                problem, effective_rounds, snapshot, variant_ids, criteria
             )
             q.put({"type": "experiment_created", "experiment_id": experiment_id})
             for variant_id in variant_ids:
@@ -259,6 +264,64 @@ def _experiment_events(problem: str, rounds: int | None) -> Iterator[str]:
             q.put({"type": "error", "message": db.sanitize_error(exc)})
         finally:
             q.put(None)
+
+    threading.Thread(target=worker, daemon=True).start()
+    while True:
+        item = q.get()
+        if item is None:
+            return
+        yield _sse(item)
+
+
+def _evaluation_events(
+    experiment: dict[str, Any], claimed: list[dict[str, Any]]
+) -> Iterator[str]:
+    q: "queue.Queue[dict[str, Any] | None]" = queue.Queue()
+
+    def worker() -> None:
+        evaluator_settings = experiment["config"]["roles"]["evaluator"]
+        with config.use_settings(experiment["config"]):
+            for item in claimed:
+                variant = item["variant"]
+                q.put({"type": "evaluation_started", "variant": variant})
+                started = time.perf_counter()
+                try:
+                    result, usage = evaluate_response(
+                        experiment["problem"],
+                        experiment["evaluation_criteria"],
+                        item["final_answer"],
+                    )
+                    result_data = result.model_dump()
+                    result_data.update(metrics(result))
+                    duration_ms = round((time.perf_counter() - started) * 1000)
+                    usage_data = usage.model_dump()
+                    db.save_evaluation(
+                        experiment["id"], variant, result_data, usage_data,
+                        duration_ms, evaluator_settings,
+                    )
+                    q.put({
+                        "type": "evaluation_completed", "variant": variant,
+                        "result": result_data, "usage": usage_data,
+                        "duration_ms": duration_ms,
+                    })
+                except Exception as exc:  # noqa: BLE001 - preserve other evaluations
+                    message = db.sanitize_error(exc)
+                    duration_ms = round((time.perf_counter() - started) * 1000)
+                    db.fail_evaluation(
+                        experiment["id"], variant, message, duration_ms,
+                        evaluator_settings,
+                    )
+                    q.put({
+                        "type": "evaluation_failed", "variant": variant,
+                        "message": message,
+                    })
+        refreshed = db.get_experiment(experiment["id"])
+        q.put({
+            "type": "evaluation_finished",
+            "experiment_id": experiment["id"],
+            "status": refreshed["evaluation_status"] if refreshed else "failed",
+        })
+        q.put(None)
 
     threading.Thread(target=worker, daemon=True).start()
     while True:
@@ -433,7 +496,27 @@ def run_experiment(req: ExperimentRequest) -> StreamingResponse:
             media_type="text/event-stream",
         )
     return StreamingResponse(
-        _experiment_events(problem, req.rounds), media_type="text/event-stream"
+        _experiment_events(problem, req.rounds, req.evaluation_criteria),
+        media_type="text/event-stream",
+    )
+
+
+@app.post("/api/experiments/{experiment_id}/evaluate")
+def evaluate_experiment(experiment_id: int) -> Response:
+    experiment = db.get_experiment(experiment_id)
+    if experiment is None:
+        return JSONResponse(
+            {"error": f"experiment {experiment_id} not found"}, status_code=404
+        )
+    try:
+        claimed = db.start_evaluations(experiment_id)
+    except ValueError as exc:
+        return JSONResponse({"error": str(exc)}, status_code=400)
+    except RuntimeError as exc:
+        return JSONResponse({"error": str(exc)}, status_code=409)
+    refreshed = db.get_experiment(experiment_id)
+    return StreamingResponse(
+        _evaluation_events(refreshed, claimed), media_type="text/event-stream"
     )
 
 
