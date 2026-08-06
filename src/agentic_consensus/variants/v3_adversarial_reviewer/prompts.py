@@ -1,6 +1,6 @@
 """Prompts for V3's moderated adversarial defect-finding loop."""
 
-from ..v1_moderated_criteria.prompts import (
+from ..v2_moderated_reviewer.prompts import (
     FINALIZE_CONSENSUS,
     FINALIZE_NO_CONSENSUS,
     MODERATOR_INTAKE,

@@ -8,7 +8,7 @@ from ...usage import usage_from_message
 from . import prompts
 from .state import PostHocReview, PostHocState
 
-VARIANT_ID = "v2-posthoc-reviewer"
+VARIANT_ID = "v1-posthoc-reviewer"
 VARIANT_VERSION = 1
 
 

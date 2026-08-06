@@ -1,6 +1,6 @@
 """Named author/reviewer workflow experiments built on LangGraph.
 
-V1 uses a moderator around an author/reviewer loop; V2 creates its criteria post hoc;
+V1 creates its criteria post hoc; V2 adds a moderator around the author/reviewer loop;
 V3 adversarially searches for substantiated defects. Rejected proposals return to
 Agent A until the reviewer approves or a stopping rule fires.
 

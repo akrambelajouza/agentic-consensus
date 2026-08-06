@@ -5,7 +5,7 @@ from langchain_core.messages import HumanMessage, SystemMessage
 from ... import config
 from ...models import agent_a_llm, agent_b_llm, moderator_llm
 from ...usage import usage_from_message
-from ..v1_moderated_criteria.state import Criteria
+from ..v2_moderated_reviewer.state import Criteria
 from . import prompts
 from .state import AdversarialReview, AdversarialState
 

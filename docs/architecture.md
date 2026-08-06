@@ -1,6 +1,22 @@
 # Architecture
 
-## V1 — Moderated criteria
+## V1 — Post-hoc reviewer
+
+```mermaid
+flowchart TD
+    START([start]) --> agent_a
+    agent_a["agent_a<br/><i>author</i><br/>problem → proposal"] --> agent_b
+    agent_b["agent_b<br/><i>reviewer</i><br/>derive criteria + review"] --> route{route}
+    route -->|not approved,<br/>rounds left| agent_a
+    route -->|approved / limit / stalled| END([end])
+```
+
+V1 has two model-calling nodes. Agent B returns `PostHocReview`, which extends the
+normal review with `criteria`. Those criteria are appended to `criteria_history` on
+every round. Agent B also sets the terminal verdict; there is no intake or finalizer
+call, and the latest Agent A proposal becomes the final answer.
+
+## V2 — Moderated reviewer
 
 ```mermaid
 flowchart TD
@@ -18,22 +34,6 @@ flowchart TD
 Four nodes, one cycle. The cycle is `agent_a → agent_b → agent_a`, and everything
 interesting is in when it exits.
 
-## V2 — Post-hoc reviewer
-
-```mermaid
-flowchart TD
-    START([start]) --> agent_a
-    agent_a["agent_a<br/><i>author</i><br/>problem → proposal"] --> agent_b
-    agent_b["agent_b<br/><i>reviewer</i><br/>derive criteria + review"] --> route{route}
-    route -->|not approved,<br/>rounds left| agent_a
-    route -->|approved / limit / stalled| END([end])
-```
-
-V2 has two model-calling nodes. Agent B returns `PostHocReview`, which extends the
-normal review with `criteria`. Those criteria are appended to `criteria_history` on
-every round. Agent B also sets the terminal verdict; there is no intake or finalizer
-call, and the latest Agent A proposal becomes the final answer.
-
 ## V3 — Adversarial reviewer
 
 ```mermaid
@@ -47,7 +47,7 @@ flowchart TD
     finalize["finalize<br/><i>moderator</i><br/>verdict + answer"] --> END([end])
 ```
 
-V3 deliberately uses V1's topology and its fixed intake criteria. Its
+V3 deliberately uses V2's topology and its fixed intake criteria. Its
 `AdversarialReview` replaces scoring with five categorized defect lists. Each
 `Defect` contains severity, evidence, and a required correction. `approved` and
 `required_changes` are computed fields: approval is true exactly when the review
@@ -58,7 +58,7 @@ V3's stall guard treats a falling blocking-defect count as progress. Flat or ris
 counts across the configured patience window send the run to the moderator finalizer
 as `stalled`.
 
-## V1 roles
+## V2 roles
 
 | Node | Role | Returns | Notes |
 | --- | --- | --- | --- |
@@ -105,6 +105,8 @@ the same three signals. One place decides how a run is characterised, so the lab
 the transcript can't drift from the reason the loop actually stopped.
 
 ## State
+
+The moderated V2/V3 state carries the fixed intake framing and finalizer output:
 
 ```python
 class ConsensusState(TypedDict, total=False):
@@ -185,15 +187,15 @@ placeholder text like "N/A" that the model has to interpret.
 src/agentic_consensus/
 ├── variants/
 │   ├── registry.py               public IDs and graph factories
-│   ├── v1_moderated_criteria/    V1 graph, nodes, prompts, state
-│   ├── v2_posthoc_reviewer/      V2 graph, nodes, prompts, state
+│   ├── v1_posthoc_reviewer/      V1 graph, nodes, prompts, state
+│   ├── v2_moderated_reviewer/    V2 graph, nodes, prompts, state
 │   └── v3_adversarial_reviewer/  V3 graph, nodes, prompts, state
 ├── config.py      every tunable, read from the environment
-├── state.py       backward-compatible V1 state exports
+├── state.py       convenience exports for the default V1 state
 ├── schemas.py     Review / Usage / Verdict shared by variants
 ├── models.py      provider-agnostic model factories
 ├── usage.py       shared token and provider-cost accounting
-├── graph.py       backward-compatible default V1 graph export
+├── graph.py       default V1 graph export
 ├── transcript.py  markdown / HTML / JSON renderers
 ├── __main__.py    CLI runner
 ├── web.py         FastAPI app (`--extra web`): routes, worker thread, persistence

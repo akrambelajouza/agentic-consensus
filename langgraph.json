@@ -1,8 +1,8 @@
 {
   "dependencies": ["."],
   "graphs": {
-    "v1-moderated-criteria": "agentic_consensus.variants.v1_moderated_criteria.graph:graph",
-    "v2-posthoc-reviewer": "agentic_consensus.variants.v2_posthoc_reviewer.graph:graph",
+    "v1-posthoc-reviewer": "agentic_consensus.variants.v1_posthoc_reviewer.graph:graph",
+    "v2-moderated-reviewer": "agentic_consensus.variants.v2_moderated_reviewer.graph:graph",
     "v3-adversarial-reviewer": "agentic_consensus.variants.v3_adversarial_reviewer.graph:graph"
   },
   "env": ".env"

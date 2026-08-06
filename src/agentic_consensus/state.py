@@ -1,6 +1,17 @@
-"""Backward-compatible exports for V1 state and shared accounting schemas."""
+"""Convenience exports for the default V1 state and shared schemas."""
 
 from .schemas import Review, Usage, Verdict
-from .variants.v1_moderated_criteria.state import ConsensusState, Criteria
+from .variants.v1_posthoc_reviewer.state import PostHocReview, PostHocState
+from .variants.v2_moderated_reviewer.state import Criteria
 
-__all__ = ["ConsensusState", "Criteria", "Review", "Usage", "Verdict"]
+ConsensusState = PostHocState
+
+__all__ = [
+    "ConsensusState",
+    "PostHocState",
+    "PostHocReview",
+    "Criteria",
+    "Review",
+    "Usage",
+    "Verdict",
+]

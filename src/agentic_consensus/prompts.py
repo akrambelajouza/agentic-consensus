@@ -1,17 +1,5 @@
-"""Backward-compatible V1 prompt exports."""
+"""Convenience exports for the default V1 post-hoc prompts."""
 
-from .variants.v1_moderated_criteria.prompts import (
-    AGENT_A,
-    AGENT_B,
-    FINALIZE_CONSENSUS,
-    FINALIZE_NO_CONSENSUS,
-    MODERATOR_INTAKE,
-)
+from .variants.v1_posthoc_reviewer.prompts import AGENT_A, AGENT_B
 
-__all__ = [
-    "MODERATOR_INTAKE",
-    "AGENT_A",
-    "AGENT_B",
-    "FINALIZE_CONSENSUS",
-    "FINALIZE_NO_CONSENSUS",
-]
+__all__ = ["AGENT_A", "AGENT_B"]

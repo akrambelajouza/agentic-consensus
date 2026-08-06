@@ -9,9 +9,9 @@ file-path specs without package context, so the relative imports in `graph.py` f
 
 ```jsonc
 // wrong
-"v1-moderated-criteria": "./src/agentic_consensus/variants/v1_moderated_criteria/graph.py:graph"
+"v1-posthoc-reviewer": "./src/agentic_consensus/variants/v1_posthoc_reviewer/graph.py:graph"
 // right — no "/", so it is imported as a module
-"v1-moderated-criteria": "agentic_consensus.variants.v1_moderated_criteria.graph:graph"
+"v1-posthoc-reviewer": "agentic_consensus.variants.v1_posthoc_reviewer.graph:graph"
 ```
 
 Module syntax works because `"dependencies": ["."]` installs the package.

@@ -168,6 +168,10 @@ table.runs-table td.problem-cell { max-width:28rem; overflow:hidden; text-overfl
 .comparison-table th,.comparison-table td { border-bottom:1px solid var(--line);
                     padding:.65rem .75rem; text-align:left; vertical-align:top; }
 .comparison-table th { color:var(--muted); font-size:.78rem; text-transform:uppercase; }
+.run-details-link { display:inline-block; padding:.45rem .7rem; border:1px solid var(--accent);
+                    border-radius:7px; color:var(--accent); font-size:.78rem;
+                    font-weight:700; text-decoration:none; white-space:nowrap; }
+.run-details-link:hover { background:var(--accent); color:white; }
 .answers-grid { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:1rem;
                 align-items:start; }
 .answer-card { min-width:0; border:1px solid var(--line); border-radius:12px;
@@ -257,8 +261,8 @@ const VERDICT_LABELS = {
 };
 const ROLE_LABELS = { moderator: "Moderator", agent_a: "Agent A — author", agent_b: "Agent B — reviewer", evaluator: "Independent evaluator" };
 const VARIANT_LABELS = {
-  "v1-moderated-criteria": "V1 — Moderated criteria",
-  "v2-posthoc-reviewer": "V2 — Post-hoc reviewer",
+  "v1-posthoc-reviewer": "V1 — Post-hoc reviewer",
+  "v2-moderated-reviewer": "V2 — Moderated reviewer",
   "v3-adversarial-reviewer": "V3 — Adversarial reviewer",
 };
 
@@ -557,7 +561,7 @@ function buildEntriesFromState(state) {
   };
 
   const entries = [];
-  const hasModerator = state.variant !== "v2-posthoc-reviewer";
+  const hasModerator = state.variant !== "v1-posthoc-reviewer";
   if (hasModerator) {
     entries.push(buildEntry("intake", {
       restated_problem: state.restated_problem,
@@ -745,7 +749,7 @@ function onConfigLoaded(cfg) {
   const paintModels = () => {
   const meta = document.getElementById("model-meta");
   const rows = [["Author", cfg.roles.agent_a], ["Reviewer", cfg.roles.agent_b]];
-  if (variantEl.value !== "v2-posthoc-reviewer") rows.unshift(["Moderator", cfg.roles.moderator]);
+  if (variantEl.value !== "v1-posthoc-reviewer") rows.unshift(["Moderator", cfg.roles.moderator]);
   meta.innerHTML = rows.map(([label, r]) =>
     `<li><b>${label}:</b> <code>${r.model}</code> (${r.effort})</li>`
   ).join("") + `<li><b>Variant:</b> ${VARIANT_LABELS[variantEl.value]}</li><li><b>Max rounds:</b> ${cfg.max_rounds}</li>`;
@@ -1069,8 +1073,8 @@ function renderExperiments() {
       <td>${statusBadge(experiment.status)}</td>
       <td><span class="badge ${experiment.evaluation_status === "completed" ? "ok" : "warn"}"
                 title="${escapeHtml(experiment.evaluation_status.replaceAll("_", " "))}">${experiment.evaluation_status === "completed" ? "Done" : "Waiting"}</span></td>
-      <td>${variantSummary(variants["v1-moderated-criteria"])}</td>
-      <td>${variantSummary(variants["v2-posthoc-reviewer"])}</td>
+      <td>${variantSummary(variants["v1-posthoc-reviewer"])}</td>
+      <td>${variantSummary(variants["v2-moderated-reviewer"])}</td>
       <td>${variantSummary(variants["v3-adversarial-reviewer"])}</td>
       <td>${formatCost(experiment.total_cost)}</td>
     </tr>`;
@@ -1187,6 +1191,13 @@ function valueFor(item, key) {
   return "—";
 }
 
+function runDetailsAction(item) {
+  if (!item || item.status !== "completed" || item.id == null) {
+    return '<span class="empty-hint">Unavailable</span>';
+  }
+  return `<a class="run-details-link" href="/history/${item.id}">View run details</a>`;
+}
+
 function answerCard(item) {
   const label = VARIANT_LABELS[item.variant] || item.variant;
   if (item.status === "failed") {
@@ -1225,8 +1236,8 @@ function renderExperiment(experiment) {
   renderEvaluation(experiment);
   const variants = Object.fromEntries(experiment.variants.map(item => [item.variant, item]));
   const ordered = [
-    variants["v1-moderated-criteria"],
-    variants["v2-posthoc-reviewer"],
+    variants["v1-posthoc-reviewer"],
+    variants["v2-moderated-reviewer"],
     variants["v3-adversarial-reviewer"],
   ];
   const metrics = [
@@ -1235,7 +1246,7 @@ function renderExperiment(experiment) {
   ];
   comparisonBody.innerHTML = metrics.map(([label, key]) =>
     `<tr><th>${label}</th>${ordered.map(item => `<td>${escapeHtml(String(valueFor(item, key)))}</td>`).join("")}</tr>`
-  ).join("");
+  ).join("") + `<tr><th>Run details</th>${ordered.map(item => `<td>${runDetailsAction(item)}</td>`).join("")}</tr>`;
   answersGrid.innerHTML = ordered.map(answerCard).join("");
 }
 
@@ -1253,7 +1264,7 @@ function renderEvaluation(experiment) {
   const criteria = experiment.evaluation_criteria || [];
   criteriaList.innerHTML = criteria.map(item => `<li><b>${escapeHtml(item.id)}</b> — ${escapeHtml(item.text)}</li>`).join("");
   const records = Object.fromEntries((experiment.evaluations || []).map(item => [item.variant, item]));
-  const order = ["v1-moderated-criteria", "v2-posthoc-reviewer", "v3-adversarial-reviewer"];
+  const order = ["v1-posthoc-reviewer", "v2-moderated-reviewer", "v3-adversarial-reviewer"];
   const tabStatus = document.getElementById("evaluation-tab-status");
   const evaluationDone = experiment.evaluation_status === "completed";
   tabStatus.textContent = evaluationDone ? "Done" : "Waiting";

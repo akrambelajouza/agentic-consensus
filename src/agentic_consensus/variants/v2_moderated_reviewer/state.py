@@ -1,4 +1,4 @@
-"""Graph state and structured schemas for V1's moderated-criteria workflow."""
+"""Graph state and structured schemas for V2's moderated workflow."""
 
 import operator
 from typing import Annotated, TypedDict

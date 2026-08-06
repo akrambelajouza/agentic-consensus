@@ -1,4 +1,4 @@
-"""System prompts for V1's three roles.
+"""System prompts for V2's three roles.
 
 The single biggest cause of a loop that never converges is vague acceptance criteria,
 so the intake prompt spends most of its budget on making criteria checkable. The

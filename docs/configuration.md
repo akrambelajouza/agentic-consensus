@@ -189,7 +189,7 @@ with `monkeypatch.setenv` without reimporting the package.
 ## Tuning the prompts
 
 Prompts are the one thing still in source, under each named variant directory —
-they're prose, not settings. For V1, in rough order of leverage:
+they're prose, not settings. For the moderated V2, in rough order of leverage:
 
 1. **`MODERATOR_INTAKE`** — the highest-leverage prompt in the project. If criteria
    come out vague, nothing downstream can save the run. Add domain-specific guidance

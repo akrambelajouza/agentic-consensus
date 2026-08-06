@@ -1,28 +1,17 @@
 # agentic-consensus
 
-Three LangGraph author/reviewer workflows built for a later controlled comparison. V1
-uses a **Moderator** to commit to criteria before **Agent A** writes and **Agent B**
-reviews. V2 removes the moderator: Agent B derives criteria after seeing each
-proposal and reviews it in the same call. V3 returns to V1's moderated topology and
-changes only Agent B into an adversarial defect finder.
+Three LangGraph author/reviewer workflows built for controlled comparison. V1 is the
+minimal baseline: **Agent A** writes and **Agent B** derives criteria and reviews in
+one call. V2 adds a **Moderator** that fixes criteria before the answer. V3 keeps
+V2's moderated topology and changes Agent B into an adversarial defect finder.
 
 | Variant | Shape | Main trade-off |
 | --- | --- | --- |
-| `v1-moderated-criteria` (default) | Moderator → Author ↔ Reviewer → Moderator | Independent criteria; two extra calls |
-| `v2-posthoc-reviewer` | Author ↔ Reviewer | Cheaper; criteria may anchor to the proposal |
+| `v1-posthoc-reviewer` (default) | Author ↔ Reviewer | Cheaper baseline; criteria may anchor to the proposal |
+| `v2-moderated-reviewer` | Moderator → Author ↔ Reviewer → Moderator | Independent criteria; two extra calls |
 | `v3-adversarial-reviewer` | Moderator → Author ↔ Adversarial reviewer → Moderator | Fixed criteria plus concrete defect evidence |
 
 V1:
-
-```
-START → intake ─→ agent_a ─→ agent_b ─→ [route]
-                     ↑                     │
-                     └──── revise ─────────┤
-                                           ↓
-                                       finalize → END
-```
-
-V2:
 
 ```text
 START → agent_a ─→ agent_b ─→ [route] → END
@@ -30,11 +19,21 @@ START → agent_a ─→ agent_b ─→ [route] → END
             └─ revise ─┘
 ```
 
-V3 uses V1's topology and fixed intake criteria. Agent B searches five defect
+V2 and V3 add intake and finalization around the loop:
+
+```text
+START → intake ─→ agent_a ─→ agent_b ─→ [route]
+                     ↑                     │
+                     └──── revise ─────────┤
+                                           ↓
+                                       finalize → END
+```
+
+V3 uses V2's topology and fixed intake criteria. Agent B searches five defect
 categories and loops only when at least one substantiated `blocking` finding exists.
 It has no numeric score.
 
-## How V1 works
+## How the moderated V2 works
 
 | Node       | Role      | Default model     | What it does                                            |
 | ---------- | --------- | ----------------- | ------------------------------------------------------- |
@@ -136,7 +135,7 @@ uv run consensus "Design a rate limiter for a multi-tenant API" --out runs/limit
 Select V2 explicitly:
 
 ```bash
-uv run consensus --variant v2-posthoc-reviewer \
+uv run consensus --variant v2-moderated-reviewer \
   "Design a rate limiter for a multi-tenant API"
 ```
 
@@ -254,15 +253,15 @@ Full docs in [docs/](docs/):
 src/agentic_consensus/
 ├── variants/
 │   ├── registry.py
-│   ├── v1_moderated_criteria/  graph / nodes / prompts / state
-│   ├── v2_posthoc_reviewer/    graph / nodes / prompts / state
+│   ├── v1_posthoc_reviewer/    graph / nodes / prompts / state
+│   ├── v2_moderated_reviewer/  graph / nodes / prompts / state
 │   └── v3_adversarial_reviewer/ graph / nodes / prompts / state
 ├── config.py      every tunable, read from the environment
-├── state.py       backward-compatible V1 schema exports
+├── state.py       convenience exports for the default V1 state
 ├── schemas.py     Review / Usage / Verdict shared by variants
 ├── models.py      provider-agnostic model factories
 ├── usage.py       shared token and cost extraction
-├── graph.py       backward-compatible default V1 graph export
+├── graph.py       default V1 graph export
 ├── transcript.py  markdown / HTML / JSON renderers
 ├── __main__.py    CLI runner
 ├── web.py         FastAPI app (`--extra web`): routes, worker thread, persistence

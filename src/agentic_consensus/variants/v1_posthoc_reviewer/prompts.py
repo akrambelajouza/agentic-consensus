@@ -1,4 +1,4 @@
-"""Prompts for V2's answer-first, post-hoc review loop."""
+"""Prompts for V1's answer-first, post-hoc review loop."""
 
 AGENT_A = """You are Agent A, the author.
 

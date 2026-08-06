@@ -1,7 +1,7 @@
 # Documentation
 
 Three named LangGraph workflows explore criteria timing and reviewer posture: V1
-commits to criteria before the answer, V2 derives them afterward, and V3 keeps V1's
+derives criteria after the answer, V2 commits to them beforehand, and V3 keeps V2's
 fixed criteria while replacing scoring with an adversarial search for defects.
 
 | Page | What's in it |
@@ -31,7 +31,8 @@ Run it from the terminal and get an HTML transcript:
 uv run consensus "Design a rate limiter for a multi-tenant API" --out runs/limiter
 ```
 
-Add `--variant v2-posthoc-reviewer` to run the answer-first V2 graph.
+The default command runs the answer-first V1 graph. Add
+`--variant v2-moderated-reviewer` to run the moderated V2 graph.
 Use `--variant v3-adversarial-reviewer` for the score-free defect-finding graph.
 
 Or run it interactively in LangGraph Studio:
@@ -60,8 +61,8 @@ result["reviews"]        # every critique, in order
 
 ## The experiment worth knowing up front
 
-V1's criteria are independent of the proposal but require moderator calls. V2 is
-cheaper, but its criteria may be anchored to what Agent A chose to discuss. V2 keeps
+V1 is cheaper, but its criteria may be anchored to what Agent A chose to discuss. V2's
+criteria are independent of the proposal but require moderator calls. V1 keeps
 each round's rubric in `criteria_history` so that later comparison can measure this
 rather than relying on impressions. V3 tests whether an evidence-backed adversarial
 reviewer reduces false approvals without causing excessive rejection.

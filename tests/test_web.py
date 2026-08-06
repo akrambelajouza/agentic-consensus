@@ -49,7 +49,7 @@ class ExperimentWebTests(unittest.TestCase):
         }
 
         def fake_execute(problem, rounds, variant_id, emit, **kwargs):
-            if variant_id == "v2-posthoc-reviewer":
+            if variant_id == "v1-posthoc-reviewer":
                 raise RuntimeError("provider secret detail")
             emit({"type": "node", "node": "agent_a", "duration_ms": 5})
             state = {
@@ -95,7 +95,7 @@ class ExperimentWebTests(unittest.TestCase):
         }
         self.assertEqual(
             completed,
-            {"v1-moderated-criteria", "v3-adversarial-reviewer"},
+            {"v2-moderated-reviewer", "v3-adversarial-reviewer"},
         )
         self.assertEqual(events[-1]["type"], "experiment_completed")
         self.assertEqual(events[-1]["status"], "partial")
@@ -105,7 +105,7 @@ class ExperimentWebTests(unittest.TestCase):
             "problem", 2, config.settings(), list(VARIANTS)
         )
         response = web.retry_experiment_variant(
-            experiment_id, "v1-moderated-criteria"
+            experiment_id, "v2-moderated-reviewer"
         )
         self.assertEqual(response.status_code, 409)
 
@@ -133,6 +133,8 @@ class ExperimentWebTests(unittest.TestCase):
         self.assertIn('id="evaluation-tab"', EXPERIMENT_DETAIL_HTML)
         self.assertIn("<th>Evaluated</th>", EXPERIMENTS_HTML)
         self.assertIn("Open full replay", EXPERIMENT_DETAIL_HTML)
+        self.assertIn("View run details", EXPERIMENT_DETAIL_HTML)
+        self.assertIn('href="/history/${item.id}"', EXPERIMENT_DETAIL_HTML)
         self.assertIn("@media (max-width: 900px)", EXPERIMENT_DETAIL_HTML)
 
 

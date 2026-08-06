@@ -53,7 +53,7 @@ class HistoryDbTests(unittest.TestCase):
         self.assertEqual(row["last_score"], 9)
         self.assertEqual(row["total_cost"], 0.001)
         self.assertEqual(row["duration_ms"], 100)
-        self.assertEqual(row["variant"], "v1-moderated-criteria")
+        self.assertEqual(row["variant"], "v1-posthoc-reviewer")
         self.assertEqual(row["variant_version"], 1)
         self.assertEqual(row["total_tokens"], 3)
         self.assertEqual(row["state"]["proposals"], state["proposals"])
@@ -156,7 +156,7 @@ class HistoryDbTests(unittest.TestCase):
 
             db.init_db(legacy_path)
             row = db.list_runs(path=legacy_path)[0]
-            self.assertEqual(row["variant"], "v1-moderated-criteria")
+            self.assertEqual(row["variant"], "v1-posthoc-reviewer")
             self.assertEqual(row["variant_version"], 1)
             self.assertEqual(row["total_tokens"], 18)
             self.assertEqual(row["duration_ms"], 50)
@@ -166,8 +166,8 @@ class HistoryDbTests(unittest.TestCase):
 
     def test_creates_experiment_slots_and_links_completed_runs(self) -> None:
         variants = [
-            "v1-moderated-criteria",
-            "v2-posthoc-reviewer",
+            "v1-posthoc-reviewer",
+            "v2-moderated-reviewer",
             "v3-adversarial-reviewer",
         ]
         snapshot = {
@@ -209,7 +209,7 @@ class HistoryDbTests(unittest.TestCase):
         self.assertTrue(all(item["model_calls"] == 1 for item in detail["variants"]))
 
     def test_experiment_partial_failure_and_retry(self) -> None:
-        variants = ["v1-moderated-criteria", "v2-posthoc-reviewer"]
+        variants = ["v1-posthoc-reviewer", "v2-moderated-reviewer"]
         experiment_id = db.create_experiment(
             "compare me", 4, {"roles": {}}, variants, path=self.path
         )
@@ -252,7 +252,7 @@ class HistoryDbTests(unittest.TestCase):
         )
 
     def test_all_failed_experiment_and_compact_list(self) -> None:
-        variants = ["v1-moderated-criteria", "v2-posthoc-reviewer"]
+        variants = ["v1-posthoc-reviewer", "v2-moderated-reviewer"]
         experiment_id = db.create_experiment(
             "compare me", 4, {"roles": {}}, variants, path=self.path
         )

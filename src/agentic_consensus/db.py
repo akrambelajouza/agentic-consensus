@@ -42,7 +42,7 @@ CREATE TABLE IF NOT EXISTS experiments (
 CREATE TABLE IF NOT EXISTS runs (
     id               INTEGER PRIMARY KEY AUTOINCREMENT,
     created_at       TEXT NOT NULL,
-    variant          TEXT NOT NULL DEFAULT 'v1-moderated-criteria',
+    variant          TEXT NOT NULL DEFAULT 'v1-posthoc-reviewer',
     variant_version  INTEGER NOT NULL DEFAULT 1,
     problem          TEXT NOT NULL,
     restated_problem TEXT,
@@ -132,7 +132,7 @@ def init_db(path: str | None = None) -> None:
         if "variant" not in columns:
             conn.execute(
                 "ALTER TABLE runs ADD COLUMN variant TEXT NOT NULL "
-                "DEFAULT 'v1-moderated-criteria'"
+                "DEFAULT 'v1-posthoc-reviewer'"
             )
         if "variant_version" not in columns:
             conn.execute(

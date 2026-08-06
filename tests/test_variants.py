@@ -7,10 +7,10 @@ from agentic_consensus.variants.registry import (
     VARIANTS,
     get_variant,
 )
-from agentic_consensus.variants.v2_posthoc_reviewer import nodes as v2_nodes
-from agentic_consensus.variants.v2_posthoc_reviewer.graph import build_graph
-from agentic_consensus.variants.v2_posthoc_reviewer.state import PostHocReview
-from agentic_consensus.variants.v1_moderated_criteria.state import Criteria
+from agentic_consensus.variants.v1_posthoc_reviewer import nodes as v1_nodes
+from agentic_consensus.variants.v1_posthoc_reviewer.graph import build_graph
+from agentic_consensus.variants.v1_posthoc_reviewer.state import PostHocReview
+from agentic_consensus.variants.v2_moderated_reviewer.state import Criteria
 from agentic_consensus.variants.v3_adversarial_reviewer import nodes as v3_nodes
 from agentic_consensus.variants.v3_adversarial_reviewer.graph import (
     build_graph as build_v3_graph,
@@ -85,19 +85,25 @@ class _Reviewer:
 
 class VariantRegistryTests(unittest.TestCase):
     def test_registry_exposes_named_variants(self) -> None:
-        self.assertEqual(DEFAULT_VARIANT, "v1-moderated-criteria")
+        self.assertEqual(DEFAULT_VARIANT, "v1-posthoc-reviewer")
         self.assertEqual(
-            set(VARIANTS),
-            {
-                "v1-moderated-criteria",
-                "v2-posthoc-reviewer",
+            list(VARIANTS),
+            [
+                "v1-posthoc-reviewer",
+                "v2-moderated-reviewer",
                 "v3-adversarial-reviewer",
-            },
+            ],
+        )
+        self.assertEqual(
+            VARIANTS["v1-posthoc-reviewer"].label, "V1 — Post-hoc reviewer"
+        )
+        self.assertEqual(
+            VARIANTS["v2-moderated-reviewer"].label, "V2 — Moderated reviewer"
         )
         self.assertEqual(get_variant(None).id, DEFAULT_VARIANT)
         self.assertEqual(
             set(get_variant(DEFAULT_VARIANT).build_graph().get_graph().nodes),
-            {"__start__", "intake", "agent_a", "agent_b", "finalize", "__end__"},
+            {"__start__", "agent_a", "agent_b", "__end__"},
         )
         self.assertEqual(
             set(get_variant("v3-adversarial-reviewer").build_graph().get_graph().nodes),
@@ -114,15 +120,15 @@ class PostHocGraphTests(unittest.TestCase):
         author = _Author()
         reviewer = _Reviewer()
         with (
-            patch.object(v2_nodes, "agent_a_llm", return_value=author),
-            patch.object(v2_nodes, "agent_b_llm", return_value=reviewer),
+            patch.object(v1_nodes, "agent_a_llm", return_value=author),
+            patch.object(v1_nodes, "agent_b_llm", return_value=reviewer),
             patch.dict("os.environ", {"LANGSMITH_TRACING": "false"}),
         ):
             result = build_graph().invoke(
                 {"problem": "Make a decision", "max_rounds": 3}
             )
 
-        self.assertEqual(result["variant"], "v2-posthoc-reviewer")
+        self.assertEqual(result["variant"], "v1-posthoc-reviewer")
         self.assertEqual(result["verdict"], "consensus")
         self.assertEqual(result["final_answer"], "revised proposal")
         self.assertEqual(result["proposals"], ["first proposal", "revised proposal"])
@@ -132,7 +138,7 @@ class PostHocGraphTests(unittest.TestCase):
         self.assertEqual(author.calls, 2)
         self.assertEqual(reviewer.calls, 2)
         transcript = json.loads(render_json(result))
-        self.assertEqual(transcript["variant"], "v2-posthoc-reviewer")
+        self.assertEqual(transcript["variant"], "v1-posthoc-reviewer")
         self.assertNotIn("moderator", transcript["models"])
         self.assertEqual(
             transcript["rounds_detail"][0]["review"]["criteria"],

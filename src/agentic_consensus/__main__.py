@@ -24,7 +24,7 @@ from .transcript import (
 )
 from .variants.registry import (
     DEFAULT_VARIANT,
-    V2_POSTHOC_REVIEWER,
+    V1_POSTHOC_REVIEWER,
     VARIANTS,
     get_variant,
 )
@@ -90,7 +90,7 @@ def main(argv: list[str] | None = None) -> int:
 
     roles: dict = cfg["roles"]
     configured_roles = [("author", "agent_a"), ("reviewer", "agent_b")]
-    if args.variant != V2_POSTHOC_REVIEWER:
+    if args.variant != V1_POSTHOC_REVIEWER:
         configured_roles.append(("moderator", "moderator"))
     _log(verbose, f"variant   {variant.label}")
     for label, role in configured_roles:

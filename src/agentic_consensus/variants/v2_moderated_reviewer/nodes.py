@@ -8,7 +8,7 @@ from langchain_core.messages import HumanMessage, SystemMessage
 from ... import config
 from ...models import agent_a_llm, agent_b_llm, moderator_llm
 from ...usage import usage_from_message
-from ..registry import V1_MODERATED_CRITERIA
+from ..registry import V2_MODERATED_REVIEWER
 from . import prompts
 from .state import ConsensusState, Criteria, Review, Usage
 
@@ -48,7 +48,7 @@ def intake(state: ConsensusState) -> dict:
         raise result["parsing_error"]
     framing: Criteria = result["parsed"]
     return {
-        "variant": V1_MODERATED_CRITERIA,
+        "variant": V2_MODERATED_REVIEWER,
         "variant_version": 1,
         "restated_problem": framing.restated_problem,
         "criteria": framing.criteria,

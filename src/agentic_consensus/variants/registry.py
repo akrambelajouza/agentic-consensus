@@ -6,10 +6,10 @@ from dataclasses import dataclass
 from typing import Callable
 
 
-V1_MODERATED_CRITERIA = "v1-moderated-criteria"
-V2_POSTHOC_REVIEWER = "v2-posthoc-reviewer"
+V2_MODERATED_REVIEWER = "v2-moderated-reviewer"
+V1_POSTHOC_REVIEWER = "v1-posthoc-reviewer"
 V3_ADVERSARIAL_REVIEWER = "v3-adversarial-reviewer"
-DEFAULT_VARIANT = V1_MODERATED_CRITERIA
+DEFAULT_VARIANT = V1_POSTHOC_REVIEWER
 
 
 @dataclass(frozen=True)
@@ -22,13 +22,13 @@ class VariantSpec:
 
 
 def _build_v1():
-    from .v1_moderated_criteria.graph import build_graph
+    from .v1_posthoc_reviewer.graph import build_graph
 
     return build_graph()
 
 
 def _build_v2():
-    from .v2_posthoc_reviewer.graph import build_graph
+    from .v2_moderated_reviewer.graph import build_graph
 
     return build_graph()
 
@@ -40,22 +40,22 @@ def _build_v3():
 
 
 VARIANTS = {
-    V1_MODERATED_CRITERIA: VariantSpec(
-        id=V1_MODERATED_CRITERIA,
+    V1_POSTHOC_REVIEWER: VariantSpec(
+        id=V1_POSTHOC_REVIEWER,
         version=1,
-        label="V1 — Moderated criteria",
-        description=(
-            "Moderator fixes criteria before Agent A drafts and Agent B reviews."
-        ),
-        build_graph=_build_v1,
-    ),
-    V2_POSTHOC_REVIEWER: VariantSpec(
-        id=V2_POSTHOC_REVIEWER,
-        version=1,
-        label="V2 — Post-hoc reviewer",
+        label="V1 — Post-hoc reviewer",
         description=(
             "Agent B derives criteria after seeing Agent A's proposal and reviews it "
             "in one call."
+        ),
+        build_graph=_build_v1,
+    ),
+    V2_MODERATED_REVIEWER: VariantSpec(
+        id=V2_MODERATED_REVIEWER,
+        version=1,
+        label="V2 — Moderated reviewer",
+        description=(
+            "Moderator fixes criteria before Agent A drafts and Agent B reviews."
         ),
         build_graph=_build_v2,
     ),

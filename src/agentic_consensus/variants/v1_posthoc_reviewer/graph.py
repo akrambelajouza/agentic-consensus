@@ -1,4 +1,4 @@
-"""V2 graph: answer first, then derive criteria and review in one call."""
+"""V1 graph: answer first, then derive criteria and review in one call."""
 
 from langgraph.graph import END, START, StateGraph
 

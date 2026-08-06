@@ -39,7 +39,7 @@ def _as_review(value: Any) -> Any:
 
         return AdversarialReview.model_validate(value)
     if "criteria" in value:
-        from .variants.v2_posthoc_reviewer.state import PostHocReview
+        from .variants.v1_posthoc_reviewer.state import PostHocReview
 
         return PostHocReview.model_validate(value)
     return Review.model_validate(value)
@@ -47,7 +47,7 @@ def _as_review(value: Any) -> Any:
 
 def _models_for(state: ConsensusState) -> dict[str, str]:
     models = active_models()
-    if state.get("variant") == "v2-posthoc-reviewer":
+    if state.get("variant") == "v1-posthoc-reviewer":
         return {key: models[key] for key in ("agent_a", "agent_b")}
     return models
 
@@ -99,7 +99,7 @@ def summary(state: ConsensusState) -> dict[str, Any]:
         ],
         "approved": bool(reviews and reviews[-1].approved),
         "criteria": list(state.get("criteria") or []),
-        "variant": state.get("variant", "v1-moderated-criteria"),
+        "variant": state.get("variant", "v1-posthoc-reviewer"),
         "variant_version": state.get("variant_version", 1),
         "models": _models_for(state),
         "model_calls": len(usage),
@@ -134,7 +134,7 @@ def render_markdown(state: ConsensusState) -> str:
         "# Consensus run",
         "",
         f"**Outcome:** {VERDICT_LABELS.get(verdict, verdict)}  ",
-        f"**Variant:** {state.get('variant', 'v1-moderated-criteria')}  ",
+        f"**Variant:** {state.get('variant', 'v1-posthoc-reviewer')}  ",
         f"**Rounds:** {state.get('round', '?')} of {state.get('max_rounds', '?')}  ",
         (
             "**Blocking-defect trend:** " + " → ".join(map(str, defect_counts))
@@ -276,7 +276,7 @@ def render_html(state: ConsensusState, *, title: str = "Consensus run") -> str:
 
     meta = [
         f"<li><b>Outcome:</b> {_esc(VERDICT_LABELS.get(verdict, verdict))}</li>",
-        f"<li><b>Variant:</b> {_esc(state.get('variant', 'v1-moderated-criteria'))}</li>",
+        f"<li><b>Variant:</b> {_esc(state.get('variant', 'v1-posthoc-reviewer'))}</li>",
         f"<li><b>Rounds:</b> {_esc(str(state.get('round', '?')))}"
         f" of {_esc(str(state.get('max_rounds', '?')))}</li>",
         (
