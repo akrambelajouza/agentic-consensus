@@ -159,6 +159,11 @@ class ExperimentWebTests(unittest.TestCase):
         self.assertNotIn('id="run-form"', web.index())
         self.assertIn('id="run-form"', web.new_run_page())
         self.assertIn('href="/experiments">Consensus', web.index())
+        self.assertIn("Why I built it", web.index())
+        self.assertIn("V1 — Two agents", web.index())
+        self.assertIn("V2 — With a moderator", web.index())
+        self.assertIn("V3 — Adversarial review", web.index())
+        self.assertEqual(web.index().count('class="workflow-image-placeholder"'), 3)
 
     def test_settings_api_persists_overrides_without_returning_secrets(self) -> None:
         response = web.api_save_settings(web.AppSettingsRequest(values={

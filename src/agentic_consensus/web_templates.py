@@ -9,7 +9,7 @@ Replay all need (the flow/details panels, the hand-rolled Markdown renderer, the
 bar), so a visual or behavioural tweak is made once instead of drifting across three
 copies.
 
-Home streams a run live over SSE and renders it node by node. Replay does the same
+The New Run page streams a run live over SSE and renders it node by node. Replay does the same
 rendering with none of the streaming: it fetches a finished run's full state and
 reconstructs the identical sequence of flow entries in one shot
 (``buildEntriesFromState``), then calls the exact same ``buildEntry``/``makeFlowLi``
@@ -192,6 +192,43 @@ table.runs-table td.problem-cell { max-width:28rem; overflow:hidden; text-overfl
 .settings-controls .settings-summary { margin:0; justify-content:flex-end; }
 .settings-form { max-width:48rem; }
 .settings-form .field-help { margin-bottom:1rem; }
+.case-header { padding:1.25rem 0 2.75rem; border-bottom:1px solid var(--line); }
+.case-header .eyebrow { color:var(--accent); font-size:.78rem; font-weight:800;
+                        letter-spacing:.1em; text-transform:uppercase; margin-bottom:.7rem; }
+.case-header h1 { max-width:55rem; font-size:clamp(2rem,5vw,3.6rem); line-height:1.1;
+                  margin-bottom:1rem; }
+.case-header .subtitle { max-width:52rem; color:var(--muted); font-size:1.12rem; margin:0; }
+.case-section { padding:2.75rem 0; border-bottom:1px solid var(--line); }
+.case-section h2 { color:var(--fg); font-size:1.4rem; text-transform:none;
+                   letter-spacing:0; margin-bottom:.8rem; }
+.case-section > p { max-width:55rem; color:var(--muted); }
+.case-section .lead { color:var(--fg); font-size:1.05rem; }
+.case-stack { display:flex; flex-wrap:wrap; gap:.55rem; margin-top:1.2rem; }
+.case-tag { border:1px solid var(--line); border-radius:999px; background:var(--card);
+            padding:.35rem .75rem; font-size:.8rem; font-weight:700; }
+.case-architectures { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:1rem;
+                      margin-top:1.4rem; }
+.case-card { border:1px solid var(--line); border-radius:12px; background:var(--card);
+             overflow:hidden; min-width:0; }
+.case-card-content { padding:1rem 1.1rem 1.2rem; }
+.case-card .version { color:var(--accent); font-size:.75rem; font-weight:800; }
+.case-card h3 { margin:.3rem 0 .4rem; font-size:1.05rem; }
+.case-card p { margin:0; color:var(--muted); font-size:.9rem; }
+.workflow-image-placeholder { aspect-ratio:16/9; border:1px dashed var(--line);
+                              border-width:0 0 1px; background:var(--bg); color:var(--muted);
+                              display:flex; flex-direction:column; align-items:center;
+                              justify-content:center; text-align:center; padding:1rem; }
+.case-metrics { display:grid; grid-template-columns:repeat(5,minmax(0,1fr)); gap:.75rem;
+                margin-top:1.3rem; }
+.case-metric { border:1px solid var(--line); border-radius:10px; padding:.9rem;
+               background:var(--card); }
+.case-metric strong,.case-metric span { display:block; }
+.case-metric span { color:var(--muted); font-size:.8rem; margin-top:.25rem; }
+.case-questions { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:.75rem;
+                  margin-top:1.2rem; }
+.case-question { border-left:3px solid var(--accent); background:var(--card);
+                 border-radius:0 8px 8px 0; padding:.8rem 1rem; font-size:.9rem; }
+.case-footer { padding:2rem 0 .5rem; color:var(--muted); font-size:.85rem; }
 .comparison-table-wrap { overflow-x:auto; margin:1.25rem 0; }
 .comparison-table { width:100%; border-collapse:collapse; }
 .comparison-table th,.comparison-table td { border-bottom:1px solid var(--line);
@@ -212,7 +249,11 @@ table.runs-table td.problem-cell { max-width:28rem; overflow:hidden; text-overfl
 .answer-actions a { color:var(--accent); font-size:.82rem; font-weight:600;
                     text-decoration:none; }
 @media (max-width: 900px) {
-  .architecture-list,.answers-grid,.model-grid { grid-template-columns:1fr; }
+  .architecture-list,.answers-grid,.model-grid,.case-architectures { grid-template-columns:1fr; }
+  .case-metrics { grid-template-columns:repeat(2,minmax(0,1fr)); }
+}
+@media (max-width: 680px) {
+  .case-questions,.case-metrics { grid-template-columns:1fr; }
 }
 
 .layout { display:grid; grid-template-columns: minmax(260px, 22rem) 1fr; gap:1.5rem;
@@ -951,7 +992,92 @@ problemEl.addEventListener("keydown", (e) => {
 """
 
 RUN_HTML = _page(active="single-run", body=_HOME_BODY, script=_HOME_SCRIPT)
-HOME_HTML = _page(active="home", body="", script="")
+
+_LANDING_BODY = """
+<header class="case-header">
+  <div class="eyebrow">AI Engineering Case Study</div>
+  <h1>Evaluating Agentic Consensus Workflows</h1>
+  <p class="subtitle">I built and compared different AI review workflows to see when extra agents improve quality and when the extra cost is worth it.</p>
+</header>
+
+<section class="case-section">
+  <h2>Why I built it</h2>
+  <p class="lead">I built this project after seeing the same pattern many times: one AI agent creates an answer, but a second agent finds missing details, edge cases, or problems. The first agent then improves its answer. The second agent checks it again.</p>
+  <p>This happened when reviewing pull requests, creating AI skills, and building evaluation frameworks. I sometimes had to move an answer back and forth between different models until the result was good enough.</p>
+  <p>So I built a small workflow to automate this process and compare different ways of doing AI review.</p>
+</section>
+
+<section class="case-section">
+  <h2>How I built it</h2>
+  <p>I use <strong>LangGraph</strong> to build the workflows and manage the steps between agents. I use <strong>LangSmith</strong> to trace runs and inspect what each agent does. The app also evaluates final answers against saved criteria.</p>
+  <div class="case-stack">
+    <span class="case-tag">LangGraph</span>
+    <span class="case-tag">LangSmith</span>
+    <span class="case-tag">LLM Evaluation</span>
+    <span class="case-tag">Multi-Agent Workflows</span>
+    <span class="case-tag">Cost Analysis</span>
+    <span class="case-tag">Tracing &amp; Observability</span>
+  </div>
+</section>
+
+<section class="case-section">
+  <h2>Three ways to reach consensus</h2>
+  <p>The small workflow became an experiment. I created three versions to compare their answers, cost, tokens, and speed.</p>
+  <div class="case-architectures">
+    <article class="case-card">
+      <div class="workflow-image-placeholder" role="img" aria-label="Placeholder for the V1 workflow diagram">Architecture image / graph</div>
+      <div class="case-card-content">
+        <span class="version">V1 — Two agents</span>
+        <h3>Post-hoc Review</h3>
+        <p>Agent A writes the answer first. Agent B then creates review criteria and checks the answer. If changes are needed, it sends feedback to Agent A.</p>
+      </div>
+    </article>
+    <article class="case-card">
+      <div class="workflow-image-placeholder" role="img" aria-label="Placeholder for the V2 workflow diagram">Architecture image / graph</div>
+      <div class="case-card-content">
+        <span class="version">V2 — With a moderator</span>
+        <h3>Moderated Review</h3>
+        <p>A moderator first makes the user's problem clearer and creates fixed criteria. Agent A writes the answer, and Agent B reviews it against those criteria.</p>
+      </div>
+    </article>
+    <article class="case-card">
+      <div class="workflow-image-placeholder" role="img" aria-label="Placeholder for the V3 workflow diagram">Architecture image / graph</div>
+      <div class="case-card-content">
+        <span class="version">V3 — with an adversarial reviewer</span>
+        <h3>Adversarial Review</h3>
+        <p>This version also starts with a moderator. But Agent B tries to prove that the answer is not ready. It approves only when it cannot find a real blocker.</p>
+      </div>
+    </article>
+  </div>
+</section>
+
+<section class="case-section">
+  <h2>What I compare</h2>
+  <p>I run the same tasks through different workflows and model combinations, then compare the results.</p>
+  <div class="case-metrics">
+    <div class="case-metric"><strong>Quality</strong><span>How well the final answer meets the criteria</span></div>
+    <div class="case-metric"><strong>Iterations</strong><span>How many revisions were needed</span></div>
+    <div class="case-metric"><strong>Tokens</strong><span>Total input and output usage</span></div>
+    <div class="case-metric"><strong>Cost</strong><span>Provider-reported model cost</span></div>
+    <div class="case-metric"><strong>Latency</strong><span>Total time for the workflow</span></div>
+  </div>
+</section>
+
+<section class="case-section">
+  <h2>Questions I want to answer</h2>
+  <div class="case-questions">
+    <div class="case-question">Does an intake moderator improve the result enough to justify its extra cost?</div>
+    <div class="case-question">Does an adversarial reviewer find more useful problems than a normal reviewer?</div>
+    <div class="case-question">Can a cheaper model review almost as well as an expensive model?</div>
+    <div class="case-question">When does another review round stop being useful?</div>
+    <div class="case-question">Which workflow gives the best balance between quality, cost, and speed?</div>
+  </div>
+</section>
+
+<footer class="case-footer">AI engineering project: orchestration, evaluation, tracing, and cost-quality trade-offs.</footer>
+"""
+
+HOME_HTML = _page(active="home", body=_LANDING_BODY, script="")
 # Backwards-compatible template name for code importing the old home/run page.
 INDEX_HTML = RUN_HTML
 
