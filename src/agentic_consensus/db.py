@@ -37,7 +37,8 @@ CREATE TABLE IF NOT EXISTS experiments (
     evaluation_status  TEXT NOT NULL DEFAULT 'not_evaluated',
     max_rounds         INTEGER NOT NULL,
     config_json        TEXT NOT NULL,
-    evaluation_criteria_json TEXT
+    evaluation_criteria_json TEXT,
+    evaluation_config_json TEXT
 );
 CREATE TABLE IF NOT EXISTS runs (
     id               INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -54,6 +55,7 @@ CREATE TABLE IF NOT EXISTS runs (
     total_tokens     INTEGER,
     duration_ms      INTEGER,
     experiment_id    INTEGER REFERENCES experiments(id),
+    config_json      TEXT,
     state_json       TEXT NOT NULL
 );
 CREATE TABLE IF NOT EXISTS experiment_variants (
@@ -83,6 +85,22 @@ CREATE TABLE IF NOT EXISTS evaluations (
     completed_at    TEXT,
     PRIMARY KEY (experiment_id, variant),
     UNIQUE (run_id)
+);
+CREATE TABLE IF NOT EXISTS model_catalog (
+    model_id             TEXT PRIMARY KEY,
+    name                 TEXT NOT NULL,
+    provider             TEXT NOT NULL,
+    prompt_price         TEXT,
+    completion_price     TEXT,
+    context_length       INTEGER,
+    supported_parameters_json TEXT NOT NULL,
+    popularity_rank      INTEGER NOT NULL,
+    refreshed_at         TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS app_settings (
+    setting_key TEXT PRIMARY KEY,
+    setting_value TEXT NOT NULL,
+    updated_at TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_runs_created_at ON runs(created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_experiments_created_at ON experiments(created_at DESC);
@@ -124,6 +142,10 @@ def init_db(path: str | None = None) -> None:
             conn.execute(
                 "ALTER TABLE experiments ADD COLUMN evaluation_criteria_json TEXT"
             )
+        if "evaluation_config_json" not in experiment_columns:
+            conn.execute(
+                "ALTER TABLE experiments ADD COLUMN evaluation_config_json TEXT"
+            )
         columns = {row["name"] for row in conn.execute("PRAGMA table_info(runs)")}
         if "total_cost" not in columns:
             conn.execute("ALTER TABLE runs ADD COLUMN total_cost REAL")
@@ -145,6 +167,8 @@ def init_db(path: str | None = None) -> None:
                 "ALTER TABLE runs ADD COLUMN experiment_id INTEGER "
                 "REFERENCES experiments(id)"
             )
+        if "config_json" not in columns:
+            conn.execute("ALTER TABLE runs ADD COLUMN config_json TEXT")
         conn.execute(
             "CREATE UNIQUE INDEX IF NOT EXISTS idx_runs_experiment_variant "
             "ON runs(experiment_id, variant) WHERE experiment_id IS NOT NULL"
@@ -205,6 +229,114 @@ def sanitize_error(error: object) -> str:
     )
     message = re.sub(r"\bsk-[A-Za-z0-9_-]{8,}\b", "[redacted]", message)
     return message[:1000]
+
+
+def get_app_settings(*, path: str | None = None) -> dict[str, str]:
+    """Return persisted application overrides as a key/value mapping."""
+    with _connect(path) as conn:
+        try:
+            rows = conn.execute(
+                "SELECT setting_key, setting_value FROM app_settings"
+            ).fetchall()
+        except sqlite3.OperationalError as exc:
+            # CLI/library use does not initialize the web database. In that mode,
+            # persisted web overrides are simply absent and environment config wins.
+            if "no such table" not in str(exc).lower():
+                raise
+            return {}
+    return {row["setting_key"]: row["setting_value"] for row in rows}
+
+
+def replace_app_settings(
+    values: dict[str, str | None], *, path: str | None = None
+) -> None:
+    """Upsert nonempty values and delete keys whose value is empty/None."""
+    timestamp = _now()
+    with _connect(path) as conn:
+        for key, value in values.items():
+            clean = value.strip() if isinstance(value, str) else None
+            if clean:
+                conn.execute(
+                    "INSERT INTO app_settings (setting_key, setting_value, updated_at) "
+                    "VALUES (?, ?, ?) ON CONFLICT(setting_key) DO UPDATE SET "
+                    "setting_value=excluded.setting_value, updated_at=excluded.updated_at",
+                    (key, clean, timestamp),
+                )
+            else:
+                conn.execute("DELETE FROM app_settings WHERE setting_key=?", (key,))
+
+
+def replace_model_catalog(
+    models: list[dict[str, Any]], *, refreshed_at: str | None = None,
+    path: str | None = None,
+) -> str:
+    """Atomically replace the locally saved OpenRouter catalog."""
+    timestamp = refreshed_at or _now()
+    with _connect(path) as conn:
+        conn.execute("DELETE FROM model_catalog")
+        conn.executemany(
+            """INSERT INTO model_catalog
+               (model_id, name, provider, prompt_price, completion_price,
+                context_length, supported_parameters_json, popularity_rank,
+                refreshed_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            [(
+                item["id"], item["name"], item["provider"],
+                item.get("prompt_price"), item.get("completion_price"),
+                item.get("context_length"),
+                json.dumps(item.get("supported_parameters") or []),
+                item["popularity_rank"], timestamp,
+            ) for item in models],
+        )
+    return timestamp
+
+
+def get_model_catalog(*, path: str | None = None) -> dict[str, Any]:
+    with _connect(path) as conn:
+        rows = conn.execute(
+            "SELECT * FROM model_catalog ORDER BY popularity_rank"
+        ).fetchall()
+    models = []
+    for row in rows:
+        item = dict(row)
+        item["id"] = item.pop("model_id")
+        item["supported_parameters"] = json.loads(
+            item.pop("supported_parameters_json")
+        )
+        models.append(item)
+    return {
+        "models": models,
+        "refreshed_at": models[0]["refreshed_at"] if models else None,
+    }
+
+
+def freeze_evaluation_config(
+    experiment_id: int, evaluator: dict[str, Any], *, path: str | None = None
+) -> dict[str, Any]:
+    """Freeze the evaluator on first use and return the persisted choice."""
+    with _connect(path) as conn:
+        row = conn.execute(
+            "SELECT status, evaluation_status, evaluation_criteria_json, "
+            "evaluation_config_json FROM experiments WHERE id=?",
+            (experiment_id,),
+        ).fetchone()
+        if row is None:
+            raise ValueError("experiment not found")
+        if row["status"] != "completed":
+            raise ValueError("all workflow variants must complete before evaluation")
+        if not row["evaluation_criteria_json"]:
+            raise ValueError("experiment has no evaluation criteria")
+        if row["evaluation_status"] == "evaluating":
+            raise RuntimeError("evaluation is already running")
+        if row["evaluation_status"] == "completed":
+            raise RuntimeError("evaluation is already completed")
+        if row["evaluation_config_json"]:
+            return json.loads(row["evaluation_config_json"])
+        conn.execute(
+            "UPDATE experiments SET evaluation_config_json=? WHERE id=?",
+            (json.dumps(evaluator), experiment_id),
+        )
+    return evaluator
 
 
 def _refresh_experiment_status(
@@ -331,6 +463,7 @@ def save_run(
     state: dict[str, Any],
     *,
     experiment_id: int | None = None,
+    config_snapshot: dict[str, Any] | None = None,
     path: str | None = None,
 ) -> int:
     """Persist a completed run. Returns the new row's id.
@@ -375,8 +508,8 @@ def save_run(
             INSERT INTO runs
                 (created_at, variant, variant_version, problem, restated_problem,
                  verdict, rounds, max_rounds, last_score, total_cost, total_tokens,
-                 duration_ms, experiment_id, state_json)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                 duration_ms, experiment_id, config_json, state_json)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 created_at,
@@ -392,6 +525,7 @@ def save_run(
                 total_tokens,
                 duration_ms,
                 experiment_id,
+                json.dumps(config_snapshot) if config_snapshot else None,
                 json.dumps(state),
             ),
         )
@@ -428,6 +562,8 @@ def get_run(run_id: int, *, path: str | None = None) -> dict[str, Any] | None:
     if row is None:
         return None
     data = dict(row)
+    raw_config = data.pop("config_json", None)
+    data["config"] = json.loads(raw_config) if raw_config else None
     data["state"] = json.loads(data.pop("state_json"))
     return data
 
@@ -606,6 +742,7 @@ def list_experiments(
         experiment["total_cost"] = _experiment_cost(experiment["variants"])
         experiment.pop("config_json", None)
         experiment.pop("evaluation_criteria_json", None)
+        experiment.pop("evaluation_config_json", None)
     return experiments
 
 
@@ -652,6 +789,10 @@ def get_experiment(
     experiment["config"] = json.loads(experiment.pop("config_json"))
     raw_criteria = experiment.pop("evaluation_criteria_json")
     experiment["evaluation_criteria"] = json.loads(raw_criteria) if raw_criteria else []
+    raw_evaluation_config = experiment.pop("evaluation_config_json")
+    experiment["evaluation_config"] = (
+        json.loads(raw_evaluation_config) if raw_evaluation_config else None
+    )
     experiment["variants"] = variants
     experiment["total_cost"] = _experiment_cost(variants)
     evaluations = []

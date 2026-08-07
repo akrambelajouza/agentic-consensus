@@ -124,6 +124,13 @@ variables override it, so `MAX_ROUNDS=2 uv run consensus "..."` works for a one-
 malformed value fails at startup naming the variable, before the first paid call. Full
 table in [docs/configuration.md](docs/configuration.md).
 
+The web UI uses these model values as its initial selections. Open **Settings**, choose
+how many popular OpenRouter text models to save (30 by default), and refresh the
+catalog manually. Then use the searchable role selectors on **Single Run → New run**
+or **Consensus → New experiment**. UI selections affect only
+the new run or experiment; they never rewrite `.env`. The independent evaluator is
+chosen separately from an experiment's Evaluation tab.
+
 ## Run
 
 ### CLI — watch it, then keep the transcript

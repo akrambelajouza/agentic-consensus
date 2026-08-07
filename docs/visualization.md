@@ -152,7 +152,7 @@ uv run consensus-web    # http://127.0.0.1:8000
 
 Three pages, reachable from the same top nav:
 
-- **Home** — choose V1, V2, or V3, submit a problem, and watch it stream live over
+- **Single Run → New run** — choose V1, V2, or V3, submit a problem, and watch it stream live over
   Server-Sent Events: a flow
   panel on the left (Intake → Agent A · Round *N* → Agent B · Round *N* → ... →
   Finalize, appended as each node finishes), a details panel on the right showing
@@ -168,7 +168,7 @@ Three pages, reachable from the same top nav:
   live, reconstructed entirely from the saved state. No LLM calls, so it's free and
   instant, and it survives server restarts.
 
-Export buttons on both Home (after a run finishes) and Replay produce the same
+Export buttons on both New run (after a run finishes) and Replay produce the same
 `.md`/`.html`/`.json` as the CLI's `--out`, via `render_markdown`/`render_html`/
 `render_json` — one renderer, three ways to reach it.
 

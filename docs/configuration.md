@@ -62,6 +62,24 @@ Specs are `provider:model` over `anthropic`, `openai`, or `openrouter` — see
 [providers.md](providers.md). `.env.example` ships with the OpenRouter equivalents
 filled in, since one key there reaches both vendors.
 
+For the web UI, these values are defaults rather than fixed choices. **Settings**
+stores a manually refreshed OpenRouter catalog locally (30 models by default, with a
+configurable 1–100 refresh count), and New run/New experiment can
+override the workflow models for that execution. Standalone runs and experiments
+save credential-free snapshots of the selected models. CLI, Studio, and library use
+remain environment-driven and continue to support direct providers.
+
+The Models settings tab can also save an `OPENROUTER_API_KEY` override. The LangSmith
+tab can save `LANGSMITH_API_KEY`, `LANGSMITH_ENDPOINT`, `LANGSMITH_TRACING`, and
+`LANGSMITH_PROJECT`. Nonempty SQLite values take precedence; clearing a field restores
+the corresponding environment fallback. API keys are never returned to the browser,
+although—because this is a local portfolio application—they are stored as plain text
+in the local SQLite database. Protect the database file as you would protect `.env`.
+
+The model catalog stays in its dedicated `model_catalog` table rather than the
+key/value settings table because it is structured, searchable data replaced as one
+atomic refresh.
+
 ### Token budgets
 
 | Variable | Default | Min |

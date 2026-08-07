@@ -27,7 +27,6 @@ Steer behaviour through the prompts and effort instead.
 
 from __future__ import annotations
 
-import os
 from typing import TYPE_CHECKING
 
 from . import config
@@ -152,7 +151,9 @@ def build_llm(
     # `ignore` covers the case `require_parameters` can't: a backend that lists a
     # parameter in its endpoint metadata but rejects it at request time. Azure does
     # exactly that for `structured_outputs`, which is why it's excluded by default.
-    api_key = os.environ.get("OPENROUTER_API_KEY")
+    from . import runtime_settings
+
+    api_key = runtime_settings.value("OPENROUTER_API_KEY")
     if not api_key:
         raise ValueError(
             "OPENROUTER_API_KEY is not set. Add it to .env — the 'openrouter' "

@@ -16,19 +16,23 @@ thin transport around the existing graph, not a second implementation of it.
 from __future__ import annotations
 
 import argparse
+import copy
 import json
 import queue
 import sys
 import threading
 import time
 from contextlib import asynccontextmanager, nullcontext
+from pathlib import Path
 from typing import Any, Callable, Iterator
 
 from fastapi import FastAPI
-from fastapi.responses import HTMLResponse, JSONResponse, Response, StreamingResponse
+from fastapi.responses import (
+    FileResponse, HTMLResponse, JSONResponse, Response, StreamingResponse,
+)
 from pydantic import BaseModel
 
-from . import config, db
+from . import config, db, model_catalog, runtime_settings
 from .evaluation import evaluate_response, metrics, normalize_criteria
 from .schemas import Usage
 from .transcript import render_html, render_json, render_markdown
@@ -37,31 +41,49 @@ from .web_templates import (
     EXPERIMENT_DETAIL_HTML,
     EXPERIMENTS_HTML,
     HISTORY_HTML,
-    INDEX_HTML,
+    HOME_HTML,
     NEW_EXPERIMENT_HTML,
     REPLAY_HTML,
+    RUN_HTML,
+    SETTINGS_HTML,
 )
 
 
 @asynccontextmanager
 async def _lifespan(app: FastAPI):
     db.init_db()
+    runtime_settings.apply_langsmith_environment()
     yield
 
 
 app = FastAPI(title="Agentic Consensus", lifespan=_lifespan)
+_ASSET_ROOT = Path(__file__).with_name("assets")
 
 
 class RunRequest(BaseModel):
     problem: str
     rounds: int | None = None
     variant: str = DEFAULT_VARIANT
+    models: dict[str, str] | None = None
 
 
 class ExperimentRequest(BaseModel):
     problem: str
     rounds: int | None = None
     evaluation_criteria: str | None = None
+    models: dict[str, str] | None = None
+
+
+class EvaluationRequest(BaseModel):
+    model: str | None = None
+
+
+class ModelRefreshRequest(BaseModel):
+    count: int = model_catalog.DEFAULT_CATALOG_LIMIT
+
+
+class AppSettingsRequest(BaseModel):
+    values: dict[str, str | None]
 
 
 class ExportRequest(BaseModel):
@@ -147,7 +169,8 @@ def _execute_variant(
                 )
         try:
             run_id = db.save_run(
-                problem, state, experiment_id=experiment_id
+                problem, state, experiment_id=experiment_id,
+                config_snapshot=settings_snapshot,
             )
         except Exception as exc:
             if experiment_id is not None:
@@ -157,7 +180,10 @@ def _execute_variant(
         return state, run_id
 
 
-def _run_events(problem: str, rounds: int | None, variant_id: str) -> Iterator[str]:
+def _run_events(
+    problem: str, rounds: int | None, variant_id: str,
+    selected_models: dict[str, str] | None = None,
+) -> Iterator[str]:
     """Run the graph in a worker thread, yielding one SSE message per queued event.
 
     The generator itself stays synchronous and blocking-on-queue, which is fine here:
@@ -168,10 +194,11 @@ def _run_events(problem: str, rounds: int | None, variant_id: str) -> Iterator[s
 
     def worker() -> None:
         try:
-            cfg = config.settings()
+            cfg = model_catalog.settings_with_models(selected_models)
             effective_rounds = rounds if rounds is not None else cfg["max_rounds"]
             state, run_id = _execute_variant(
-                problem, effective_rounds, variant_id, q.put
+                problem, effective_rounds, variant_id, q.put,
+                settings_snapshot=cfg,
             )
             q.put({"type": "result", "state": state, "run_id": run_id})
         except Exception as exc:  # noqa: BLE001 - surfaced to the client, not swallowed
@@ -189,13 +216,14 @@ def _run_events(problem: str, rounds: int | None, variant_id: str) -> Iterator[s
 
 
 def _experiment_events(
-    problem: str, rounds: int | None, evaluation_criteria: str | None = None
+    problem: str, rounds: int | None, evaluation_criteria: str | None = None,
+    selected_models: dict[str, str] | None = None,
 ) -> Iterator[str]:
     q: "queue.Queue[dict[str, Any] | None]" = queue.Queue()
 
     def worker() -> None:
         try:
-            snapshot = config.settings()
+            snapshot = model_catalog.settings_with_models(selected_models)
             effective_rounds = rounds if rounds is not None else snapshot["max_rounds"]
             snapshot["max_rounds"] = effective_rounds
             variant_ids = list(VARIANTS)
@@ -279,8 +307,13 @@ def _evaluation_events(
     q: "queue.Queue[dict[str, Any] | None]" = queue.Queue()
 
     def worker() -> None:
-        evaluator_settings = experiment["config"]["roles"]["evaluator"]
-        with config.use_settings(experiment["config"]):
+        evaluator_settings = (
+            experiment.get("evaluation_config")
+            or experiment["config"]["roles"]["evaluator"]
+        )
+        evaluation_snapshot = copy.deepcopy(experiment["config"])
+        evaluation_snapshot["roles"]["evaluator"] = evaluator_settings
+        with config.use_settings(evaluation_snapshot):
             for item in claimed:
                 variant = item["variant"]
                 q.put({"type": "evaluation_started", "variant": variant})
@@ -399,11 +432,34 @@ def _retry_experiment_events(
 
 @app.get("/", response_class=HTMLResponse)
 def index() -> str:
-    return INDEX_HTML
+    return HOME_HTML
+
+
+@app.get("/run/new", response_class=HTMLResponse)
+def new_run_page() -> str:
+    return RUN_HTML
+
+
+@app.get("/assets/tom-select/{filename}")
+def tom_select_asset(filename: str) -> Response:
+    allowed = {
+        "tom-select.complete.min.js": "application/javascript",
+        "tom-select.default.min.css": "text/css",
+    }
+    if filename not in allowed:
+        return Response(status_code=404)
+    return FileResponse(
+        _ASSET_ROOT / "tom-select" / filename, media_type=allowed[filename]
+    )
 
 
 @app.get("/history", response_class=HTMLResponse)
 def history_page() -> str:
+    return HISTORY_HTML
+
+
+@app.get("/run", response_class=HTMLResponse)
+def runs_page() -> str:
     return HISTORY_HTML
 
 
@@ -425,6 +481,11 @@ def experiments_page() -> str:
 @app.get("/experiments/{experiment_id}", response_class=HTMLResponse)
 def experiment_detail_page(experiment_id: int) -> str:
     return EXPERIMENT_DETAIL_HTML
+
+
+@app.get("/settings", response_class=HTMLResponse)
+def settings_page() -> str:
+    return SETTINGS_HTML
 
 
 @app.get("/api/history")
@@ -474,6 +535,39 @@ def get_config() -> JSONResponse:
         return JSONResponse({"error": str(exc)}, status_code=500)
 
 
+@app.get("/api/models")
+def api_models() -> Response:
+    try:
+        return JSONResponse(model_catalog.available_models())
+    except ValueError as exc:
+        return JSONResponse({"error": str(exc)}, status_code=500)
+
+
+@app.get("/api/settings")
+def api_settings() -> Response:
+    return JSONResponse(runtime_settings.public_settings())
+
+
+@app.post("/api/settings")
+def api_save_settings(req: AppSettingsRequest) -> Response:
+    try:
+        runtime_settings.save(req.values)
+        return JSONResponse(runtime_settings.public_settings())
+    except ValueError as exc:
+        return JSONResponse({"error": str(exc)}, status_code=400)
+
+
+@app.post("/api/models/refresh")
+def api_refresh_models(req: ModelRefreshRequest | None = None) -> Response:
+    try:
+        count = req.count if req else model_catalog.DEFAULT_CATALOG_LIMIT
+        return JSONResponse(model_catalog.refresh(limit=count))
+    except ValueError as exc:
+        return JSONResponse({"error": str(exc)}, status_code=400)
+    except Exception as exc:  # noqa: BLE001 - remote catalog errors are UI feedback
+        return JSONResponse({"error": db.sanitize_error(exc)}, status_code=502)
+
+
 @app.post("/api/run")
 def run(req: RunRequest) -> StreamingResponse:
     problem = req.problem.strip()
@@ -483,7 +577,8 @@ def run(req: RunRequest) -> StreamingResponse:
             media_type="text/event-stream",
         )
     return StreamingResponse(
-        _run_events(problem, req.rounds, req.variant), media_type="text/event-stream"
+        _run_events(problem, req.rounds, req.variant, req.models),
+        media_type="text/event-stream"
     )
 
 
@@ -496,19 +591,33 @@ def run_experiment(req: ExperimentRequest) -> StreamingResponse:
             media_type="text/event-stream",
         )
     return StreamingResponse(
-        _experiment_events(problem, req.rounds, req.evaluation_criteria),
+        _experiment_events(
+            problem, req.rounds, req.evaluation_criteria, req.models
+        ),
         media_type="text/event-stream",
     )
 
 
 @app.post("/api/experiments/{experiment_id}/evaluate")
-def evaluate_experiment(experiment_id: int) -> Response:
+def evaluate_experiment(
+    experiment_id: int, req: EvaluationRequest | None = None
+) -> Response:
     experiment = db.get_experiment(experiment_id)
     if experiment is None:
         return JSONResponse(
             {"error": f"experiment {experiment_id} not found"}, status_code=404
         )
     try:
+        existing = experiment.get("evaluation_config")
+        if existing is None:
+            requested = (
+                req.model if req and req.model
+                else model_catalog.default_model_ids()["evaluator"]
+            )
+            model_id = model_catalog.validate_model_id(requested)
+            evaluator = copy.deepcopy(experiment["config"]["roles"]["evaluator"])
+            evaluator["model"] = f"openrouter:{model_id}"
+            db.freeze_evaluation_config(experiment_id, evaluator)
         claimed = db.start_evaluations(experiment_id)
     except ValueError as exc:
         return JSONResponse({"error": str(exc)}, status_code=400)

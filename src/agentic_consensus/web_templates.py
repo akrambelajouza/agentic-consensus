@@ -54,7 +54,7 @@ label { display:block; font-size:.85rem; font-weight:600; margin:0 0 .35rem; }
 .row { display:flex; gap:1rem; align-items:flex-end; flex-wrap:wrap; }
 .row .field { flex:1 1 auto; margin:0; }
 .row .field.narrow { flex:0 0 8rem; }
-input[type=number], select { width:100%; font:inherit; padding:.6rem .75rem;
+input[type=number], input[type=text], input[type=password], select { width:100%; font:inherit; padding:.6rem .75rem;
                       background:var(--card); color:var(--fg); border:1px solid var(--line);
                       border-radius:8px; }
 button { font:inherit; font-weight:600; padding:.7rem 1.4rem; border-radius:8px; border:none;
@@ -79,9 +79,9 @@ pre { white-space:pre-wrap; word-wrap:break-word; background:var(--bg);
       margin:.6em 0; font:13.5px/1.55 ui-monospace,SFMono-Regular,Menlo,monospace; }
 .hidden { display:none !important; }
 
-.topnav { display:flex; justify-content:space-between; align-items:center;
+.topnav { display:flex; justify-content:space-between; align-items:center; gap:1rem;
           margin:0 0 1.75rem; padding-bottom:1rem; border-bottom:1px solid var(--line); }
-.topnav-links { display:flex; gap:1.25rem; }
+.topnav-links { display:flex; gap:1.25rem; flex-wrap:wrap; }
 .topnav a { color:var(--muted); text-decoration:none; font-weight:600; font-size:.9rem;
             padding:.3rem 0; border-bottom:2px solid transparent; }
 .topnav a:hover { color:var(--fg); }
@@ -93,6 +93,16 @@ pre { white-space:pre-wrap; word-wrap:break-word; background:var(--bg);
 .back-link { display:inline-block; color:var(--accent); text-decoration:none;
              font-size:.85rem; font-weight:600; margin:0 0 .85rem; }
 .back-link:hover { text-decoration:underline; }
+.page-header { display:flex; justify-content:space-between; align-items:center; gap:1rem;
+               margin:0 0 .35rem; }
+.page-header h1 { margin:0; }
+.link-button { display:inline-block; padding:.55rem 1rem; border-radius:8px;
+               background:var(--accent); color:#fff; font-size:.85rem;
+               font-weight:700; text-decoration:none; }
+.link-button:hover { filter:brightness(1.08); }
+@media (max-width: 560px) {
+  .page-header { align-items:flex-start; }
+}
 
 .replay-header { display:grid; grid-template-columns:minmax(0, 1fr) max-content;
                  gap:1.5rem; align-items:start; }
@@ -163,6 +173,25 @@ table.runs-table td.problem-cell { max-width:28rem; overflow:hidden; text-overfl
 .criterion-status.partial { color:var(--warn); }
 .criterion-status.violated { color:var(--err); }
 .field-help { color:var(--muted); font-size:.8rem; margin:.3rem 0 0; }
+.model-grid { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:1rem;
+              margin:0 0 1.25rem; }
+.model-field { min-width:0; }
+.model-field .field-help { white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.ts-wrapper.single .ts-control,.ts-dropdown { background:var(--card); color:var(--fg);
+    border-color:var(--line); }
+.ts-control input { color:var(--fg); }
+.ts-dropdown .active { background:rgba(59,91,219,.14); color:var(--fg); }
+.model-option { display:flex; flex-direction:column; line-height:1.35; }
+.model-option small { color:var(--muted); }
+.settings-summary { display:flex; gap:.75rem; flex-wrap:wrap; margin:1rem 0; }
+.settings-summary .panel { min-width:11rem; }
+.settings-summary strong { display:block; font-size:1.25rem; }
+.settings-controls { display:flex; justify-content:space-between; align-items:flex-end;
+                     gap:1.25rem; flex-wrap:wrap; margin-bottom:1rem; }
+.settings-controls > .row { flex:1 1 25rem; }
+.settings-controls .settings-summary { margin:0; justify-content:flex-end; }
+.settings-form { max-width:48rem; }
+.settings-form .field-help { margin-bottom:1rem; }
 .comparison-table-wrap { overflow-x:auto; margin:1.25rem 0; }
 .comparison-table { width:100%; border-collapse:collapse; }
 .comparison-table th,.comparison-table td { border-bottom:1px solid var(--line);
@@ -183,7 +212,7 @@ table.runs-table td.problem-cell { max-width:28rem; overflow:hidden; text-overfl
 .answer-actions a { color:var(--accent); font-size:.82rem; font-weight:600;
                     text-decoration:none; }
 @media (max-width: 900px) {
-  .architecture-list,.answers-grid { grid-template-columns:1fr; }
+  .architecture-list,.answers-grid,.model-grid { grid-template-columns:1fr; }
 }
 
 .layout { display:grid; grid-template-columns: minmax(260px, 22rem) 1fr; gap:1.5rem;
@@ -265,6 +294,36 @@ const VARIANT_LABELS = {
   "v2-moderated-reviewer": "V2 — Moderated reviewer",
   "v3-adversarial-reviewer": "V3 — Adversarial reviewer",
 };
+const modelCatalogPromise = fetch("/api/models").then(async response => {
+  const payload = await response.json();
+  if (!response.ok || payload.error) throw new Error(payload.error || "Could not load models");
+  return payload;
+});
+
+function perMillion(value) {
+  if (value == null || value === "") return "price unavailable";
+  const amount = Number(value) * 1000000;
+  return Number.isFinite(amount) ? `$${amount.toLocaleString(undefined, {maximumFractionDigits: 2})}/M` : "price unavailable";
+}
+
+function initModelSelect(element, role, catalog, options = {}) {
+  element.innerHTML = "";
+  const choices = catalog.models.map(model => ({...model}));
+  const control = new TomSelect(element, {
+    valueField: "id", labelField: "name", searchField: ["name", "provider", "id"],
+    options: choices, maxOptions: null, create: false,
+    render: {
+      option(data, escape) {
+        return `<div class="model-option"><strong>${escape(data.name)}</strong><small>${escape(data.provider)} · ${escape(data.id)} · input ${escape(perMillion(data.prompt_price))} · output ${escape(perMillion(data.completion_price))}</small></div>`;
+      },
+      item(data, escape) { return `<div title="${escape(data.id)}">${escape(data.name)}</div>`; },
+    },
+  });
+  const selected = options.value || catalog.defaults[role];
+  if (selected) control.setValue(selected, true);
+  if (options.disabled) control.disable();
+  return control;
+}
 
 const errorEl = document.getElementById("error");
 const layoutEl = document.getElementById("layout");
@@ -635,10 +694,10 @@ def _nav_html(active: str) -> str:
     return (
         '<nav class="topnav">'
         '<div class="topnav-links">'
-        f'<a href="/"{cls("home")}>Run</a>'
-        f'<a href="/experiments/new"{cls("experiment-new")}>New Experiment</a>'
-        f'<a href="/experiments"{cls("experiments")}>Experiments</a>'
-        f'<a href="/history"{cls("history")}>History</a>'
+        f'<a href="/"{cls("home")}>Home</a>'
+        f'<a href="/experiments"{cls("consensus")}>Consensus</a>'
+        f'<a href="/history"{cls("single-run")}>Single Run</a>'
+        f'<a href="/settings"{cls("settings")}>Settings</a>'
         "</div>"
         '<button type="button" id="theme-toggle" class="theme-toggle" '
         'aria-label="Toggle light/dark theme"></button>'
@@ -663,6 +722,7 @@ def _page(*, active: str, body: str, script: str) -> str:
 <html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Agentic Consensus</title>
+<link rel="stylesheet" href="/assets/tom-select/tom-select.default.min.css">
 <style>{_SHARED_CSS}</style>
 <script>{_THEME_INIT_SCRIPT}</script>
 </head>
@@ -670,6 +730,7 @@ def _page(*, active: str, body: str, script: str) -> str:
 {_nav_html(active)}
 {body}
 </main>
+<script src="/assets/tom-select/tom-select.complete.min.js"></script>
 <script>
 {_SHARED_JS}
 {script}
@@ -681,9 +742,20 @@ def _page(*, active: str, body: str, script: str) -> str:
 # --- Home -----------------------------------------------------------------
 
 _HOME_BODY = """
+<a class="back-link" href="/run">&larr; Back to runs</a>
 <h1>Agentic Consensus</h1>
 <p class="sub">Run and inspect alternative author/reviewer workflow designs.</p>
-<ul class="meta" id="model-meta"></ul>
+<div class="row field">
+  <div class="field" style="min-width:18rem;">
+    <label for="variant">Workflow variant</label>
+    <select id="variant"></select>
+  </div>
+</div>
+<div class="model-grid" id="model-meta">
+  <div class="model-field hidden" id="moderator-model-field"><label for="moderator-model">Moderator</label><select id="moderator-model"></select></div>
+  <div class="model-field"><label for="author-model">Author</label><select id="author-model"></select></div>
+  <div class="model-field"><label for="reviewer-model">Reviewer</label><select id="reviewer-model"></select></div>
+</div>
 <ul class="meta compact hidden" id="run-totals"></ul>
 
 <form id="run-form">
@@ -692,10 +764,6 @@ _HOME_BODY = """
     <textarea id="problem" placeholder="Design a rate limiter for a multi-tenant API&#10;&#10;(Cmd/Ctrl+Enter to run)" required></textarea>
   </div>
   <div class="row">
-    <div class="field" style="min-width:18rem;">
-      <label for="variant">Workflow variant</label>
-      <select id="variant"></select>
-    </div>
     <div class="field narrow">
       <label for="rounds">Max rounds</label>
       <input type="number" id="rounds" min="1" placeholder="default">
@@ -738,24 +806,33 @@ const runBtn = document.getElementById("run-btn");
 const statusEl = document.getElementById("status");
 const statusText = document.getElementById("status-text");
 const runTotalsEl = document.getElementById("run-totals");
+const moderatorModelEl = document.getElementById("moderator-model");
+const authorModelEl = document.getElementById("author-model");
+const reviewerModelEl = document.getElementById("reviewer-model");
+let modelControls = {};
 
 let pendingLi = null;    // the "Working…" placeholder awaiting the next node event
 
-function onConfigLoaded(cfg) {
+async function onConfigLoaded(cfg) {
   variantEl.innerHTML = cfg.variants.map(v =>
     `<option value="${v.id}">${v.label}</option>`
   ).join("");
   variantEl.value = cfg.default_variant;
-  const paintModels = () => {
-  const meta = document.getElementById("model-meta");
-  const rows = [["Author", cfg.roles.agent_a], ["Reviewer", cfg.roles.agent_b]];
-  if (variantEl.value !== "v1-posthoc-reviewer") rows.unshift(["Moderator", cfg.roles.moderator]);
-  meta.innerHTML = rows.map(([label, r]) =>
-    `<li><b>${label}:</b> <code>${r.model}</code> (${r.effort})</li>`
-  ).join("") + `<li><b>Variant:</b> ${VARIANT_LABELS[variantEl.value]}</li><li><b>Max rounds:</b> ${cfg.max_rounds}</li>`;
-  };
-  variantEl.addEventListener("change", paintModels);
-  paintModels();
+  try {
+    const catalog = await modelCatalogPromise;
+    modelControls = {
+      moderator: initModelSelect(moderatorModelEl, "moderator", catalog),
+      agent_a: initModelSelect(authorModelEl, "agent_a", catalog),
+      agent_b: initModelSelect(reviewerModelEl, "agent_b", catalog),
+    };
+  } catch (error) {
+    errorEl.textContent = String(error.message || error);
+    errorEl.classList.remove("hidden");
+    runBtn.disabled = true;
+  }
+  const paintVariant = () => document.getElementById("moderator-model-field").classList.toggle("hidden", variantEl.value === "v1-posthoc-reviewer");
+  variantEl.addEventListener("change", paintVariant);
+  paintVariant();
   roundsEl.placeholder = `default ${cfg.max_rounds}`;
 }
 
@@ -775,7 +852,7 @@ function resetUI() {
   pendingLi = pushPending();
 }
 
-async function runConsensus(problem, rounds, variant) {
+async function runConsensus(problem, rounds, variant, models) {
   resetUI();
   runBtn.disabled = true;
   statusEl.classList.remove("hidden");
@@ -785,7 +862,7 @@ async function runConsensus(problem, rounds, variant) {
     const resp = await fetch("/api/run", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ problem, rounds, variant }),
+      body: JSON.stringify({ problem, rounds, variant, models }),
     });
     const reader = resp.body.getReader();
     const decoder = new TextDecoder();
@@ -858,7 +935,12 @@ form.addEventListener("submit", (e) => {
   const problem = problemEl.value.trim();
   if (!problem) return;
   const rounds = roundsEl.value ? parseInt(roundsEl.value, 10) : null;
-  runConsensus(problem, rounds, variantEl.value);
+  const models = {
+    agent_a: authorModelEl.value,
+    agent_b: reviewerModelEl.value,
+  };
+  if (variantEl.value !== "v1-posthoc-reviewer") models.moderator = moderatorModelEl.value;
+  runConsensus(problem, rounds, variantEl.value, models);
 });
 
 problemEl.addEventListener("keydown", (e) => {
@@ -868,15 +950,23 @@ problemEl.addEventListener("keydown", (e) => {
 });
 """
 
-INDEX_HTML = _page(active="home", body=_HOME_BODY, script=_HOME_SCRIPT)
+RUN_HTML = _page(active="single-run", body=_HOME_BODY, script=_HOME_SCRIPT)
+HOME_HTML = _page(active="home", body="", script="")
+# Backwards-compatible template name for code importing the old home/run page.
+INDEX_HTML = RUN_HTML
 
 
 # --- New experiment -----------------------------------------------------------
 
 _NEW_EXPERIMENT_BODY = """
+<a class="back-link" href="/experiments">&larr; Back to experiments</a>
 <h1>New Experiment</h1>
 <p class="sub">Run one problem through all three workflow architectures with the same saved configuration.</p>
-<ul class="meta" id="experiment-models"></ul>
+<div class="model-grid" id="experiment-models">
+  <div class="model-field"><label for="experiment-moderator-model">Moderator</label><select id="experiment-moderator-model"></select></div>
+  <div class="model-field"><label for="experiment-author-model">Author</label><select id="experiment-author-model"></select></div>
+  <div class="model-field"><label for="experiment-reviewer-model">Reviewer</label><select id="experiment-reviewer-model"></select></div>
+</div>
 
 <form id="experiment-form">
   <div class="field">
@@ -917,18 +1007,23 @@ const statusText = document.getElementById("status-text");
 const architectureList = document.getElementById("architecture-list");
 const resultEl = document.getElementById("experiment-result");
 let experimentVariants = [];
+const experimentModeratorEl = document.getElementById("experiment-moderator-model");
+const experimentAuthorEl = document.getElementById("experiment-author-model");
+const experimentReviewerEl = document.getElementById("experiment-reviewer-model");
 
-function onConfigLoaded(cfg) {
+async function onConfigLoaded(cfg) {
   experimentVariants = cfg.variants;
   roundsEl.placeholder = `default ${cfg.max_rounds}`;
-  document.getElementById("experiment-models").innerHTML = [
-    ["Moderator", cfg.roles.moderator],
-    ["Author", cfg.roles.agent_a],
-    ["Reviewer", cfg.roles.agent_b],
-    ["Evaluator (used on request)", cfg.roles.evaluator],
-  ].map(([label, role]) =>
-    `<li><b>${label}:</b> <code>${escapeHtml(role.model)}</code> (${escapeHtml(role.effort)})</li>`
-  ).join("");
+  try {
+    const catalog = await modelCatalogPromise;
+    initModelSelect(experimentModeratorEl, "moderator", catalog);
+    initModelSelect(experimentAuthorEl, "agent_a", catalog);
+    initModelSelect(experimentReviewerEl, "agent_b", catalog);
+  } catch (error) {
+    errorEl.textContent = String(error.message || error);
+    errorEl.classList.remove("hidden");
+    experimentBtn.disabled = true;
+  }
   resetArchitectureCards();
 }
 
@@ -1004,6 +1099,11 @@ experimentForm.addEventListener("submit", async (event) => {
         problem,
         rounds: roundsEl.value ? parseInt(roundsEl.value, 10) : null,
         evaluation_criteria: criteriaEl.value,
+        models: {
+          moderator: experimentModeratorEl.value,
+          agent_a: experimentAuthorEl.value,
+          agent_b: experimentReviewerEl.value,
+        },
       }),
     });
     await consumeExperimentStream(resp);
@@ -1018,14 +1118,17 @@ experimentForm.addEventListener("submit", async (event) => {
 """
 
 NEW_EXPERIMENT_HTML = _page(
-    active="experiment-new", body=_NEW_EXPERIMENT_BODY, script=_NEW_EXPERIMENT_SCRIPT
+    active="consensus", body=_NEW_EXPERIMENT_BODY, script=_NEW_EXPERIMENT_SCRIPT
 )
 
 
 # --- Experiments --------------------------------------------------------------
 
 _EXPERIMENTS_BODY = """
-<h1>Experiments</h1>
+<div class="page-header">
+  <h1>Experiments</h1>
+  <a class="link-button" href="/experiments/new">New experiment</a>
+</div>
 <p class="sub">One problem per row, compared across V1, V2, and V3.</p>
 <div class="history-toolbar">
   <input type="search" id="experiment-search" placeholder="Search problem statements…">
@@ -1096,7 +1199,7 @@ fetch("/api/experiments").then(response => response.json()).then(experiments => 
 """
 
 EXPERIMENTS_HTML = _page(
-    active="experiments", body=_EXPERIMENTS_BODY, script=_EXPERIMENTS_SCRIPT
+    active="consensus", body=_EXPERIMENTS_BODY, script=_EXPERIMENTS_SCRIPT
 )
 
 
@@ -1138,6 +1241,10 @@ _EXPERIMENT_DETAIL_BODY = """
     <div class="evaluation-header">
       <strong>Quality evaluation</strong>
       <div class="evaluation-controls">
+        <div class="model-field" id="evaluation-model-field">
+          <label for="evaluator-model">Evaluator model</label>
+          <select id="evaluator-model"></select>
+        </div>
         <div class="evaluation-actions" id="evaluation-actions"></div>
         <p id="evaluation-status">Not evaluated</p>
       </div>
@@ -1166,6 +1273,10 @@ const evaluationActions = document.getElementById("evaluation-actions");
 const evaluationResults = document.getElementById("evaluation-results");
 const evaluationBody = document.getElementById("evaluation-body");
 let currentExperiment = null;
+const evaluatorModelEl = document.getElementById("evaluator-model");
+const evaluatorModelField = document.getElementById("evaluation-model-field");
+let evaluatorModelControl = null;
+let evaluatorModelReady = Promise.resolve();
 
 function selectTab(name) {
   const evaluationSelected = name === "evaluation";
@@ -1229,7 +1340,7 @@ function renderExperiment(experiment) {
     `<li><b>Created:</b> ${new Date(experiment.created_at).toLocaleString()}</li>`,
     `<li><b>Max rounds:</b> ${experiment.max_rounds}</li>`,
     `<li><b>Total cost:</b> ${formatCost(experiment.total_cost)}</li>`,
-    ...Object.entries(roles).map(([role, settings]) =>
+    ...Object.entries(roles).filter(([role]) => role !== "evaluator").map(([role, settings]) =>
       `<li><b>${escapeHtml(ROLE_LABELS[role] || role)}:</b> <code>${escapeHtml(settings.model)}</code> (${escapeHtml(settings.effort)})</li>`
     ),
   ].join("");
@@ -1275,7 +1386,21 @@ function renderEvaluation(experiment) {
     statusEl.textContent = "Not evaluated — no criteria were supplied.";
     evaluationActions.innerHTML = "";
     evaluationResults.classList.add("hidden");
+    evaluatorModelField.classList.add("hidden");
     return;
+  }
+  evaluatorModelField.classList.remove("hidden");
+  if (!evaluatorModelControl) {
+    evaluatorModelReady = modelCatalogPromise.then(catalog => {
+      const frozen = experiment.evaluation_config?.model?.replace(/^openrouter:/, "");
+      evaluatorModelControl = initModelSelect(
+        evaluatorModelEl, "evaluator", catalog,
+        {value: frozen || catalog.defaults.evaluator, disabled: Boolean(frozen)}
+      );
+    }).catch(error => {
+      errorEl.textContent = String(error.message || error);
+      errorEl.classList.remove("hidden");
+    });
   }
   statusEl.textContent = experiment.evaluation_status.replaceAll("_", " ");
   const canEvaluate = experiment.status === "completed" && experiment.evaluation_status !== "completed";
@@ -1302,7 +1427,12 @@ async function evaluateOutputs(button) {
   button.disabled = true;
   button.textContent = "Evaluating…";
   try {
-    const response = await fetch(`/api/experiments/${experimentId}/evaluate`, { method: "POST" });
+    await evaluatorModelReady;
+    const response = await fetch(`/api/experiments/${experimentId}/evaluate`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({model: evaluatorModelEl.value}),
+    });
     if (!response.ok) {
       const body = await response.json();
       throw new Error(body.error || `Evaluation failed (${response.status})`);
@@ -1383,14 +1513,17 @@ fetch(`/api/experiments/${experimentId}`).then(response => {
 """
 
 EXPERIMENT_DETAIL_HTML = _page(
-    active="experiments", body=_EXPERIMENT_DETAIL_BODY, script=_EXPERIMENT_DETAIL_SCRIPT
+    active="consensus", body=_EXPERIMENT_DETAIL_BODY, script=_EXPERIMENT_DETAIL_SCRIPT
 )
 
 
 # --- History ----------------------------------------------------------------
 
 _HISTORY_BODY = """
-<h1>History</h1>
+<div class="page-header">
+  <h1>History</h1>
+  <a class="link-button" href="/run/new">New run</a>
+</div>
 <p class="sub">Every completed run, most recent first. Click a row to replay it.</p>
 <div class="history-toolbar">
   <input type="search" id="history-search" placeholder="Search problem statements…">
@@ -1480,7 +1613,224 @@ fetch("/api/history").then(r => r.json()).then(runs => {
 });
 """
 
-HISTORY_HTML = _page(active="history", body=_HISTORY_BODY, script=_HISTORY_SCRIPT)
+HISTORY_HTML = _page(active="single-run", body=_HISTORY_BODY, script=_HISTORY_SCRIPT)
+
+
+# --- Settings -----------------------------------------------------------------
+
+_SETTINGS_BODY = """
+<h1>Settings</h1>
+<p class="sub">Manage local provider and tracing configuration. Saved values override the environment.</p>
+<div class="tab-shell">
+  <div class="tabs" role="tablist" aria-label="Settings sections">
+    <button type="button" class="tab-button active" id="models-tab" role="tab" aria-selected="true" aria-controls="models-panel">Models</button>
+    <button type="button" class="tab-button" id="langsmith-tab" role="tab" aria-selected="false" aria-controls="langsmith-panel">LangSmith</button>
+  </div>
+  <section id="models-panel" class="tab-panel" role="tabpanel" aria-labelledby="models-tab">
+    <div class="settings-form">
+      <div class="field">
+        <label for="openrouter-api-key">OpenRouter API key</label>
+        <input type="password" id="openrouter-api-key" autocomplete="new-password" placeholder="Use OPENROUTER_API_KEY from environment">
+        <p class="field-help" id="openrouter-key-help">Leave empty and save to use the environment value.</p>
+      </div>
+      <button type="button" id="save-openrouter">Save OpenRouter key</button>
+    </div>
+    <hr>
+    <div class="settings-controls">
+      <div class="row">
+        <div class="field narrow">
+          <label for="model-count">Number of models</label>
+          <input type="number" id="model-count" min="1" max="100" value="30">
+        </div>
+        <div class="field" style="flex:0 0 auto;">
+          <button type="button" id="refresh-models">Update models from OpenRouter</button>
+        </div>
+      </div>
+      <div class="settings-summary">
+        <div class="panel"><span class="empty-hint">Saved models</span><strong id="catalog-count">—</strong></div>
+        <div class="panel"><span class="empty-hint">Last updated</span><strong id="catalog-updated">Never</strong></div>
+      </div>
+    </div>
+    <p class="field-help">Manual metadata refresh only. It does not run a model or consume inference tokens.</p>
+    <div class="history-toolbar"><input type="search" id="models-search" placeholder="Search models, providers, or IDs…" aria-label="Search models"></div>
+    <table class="runs-table" id="models-table">
+      <thead><tr><th data-key="popularity_rank">Rank</th><th data-key="name">Model</th><th data-key="provider">Provider</th><th data-key="prompt_price">Input</th><th data-key="completion_price">Output</th><th data-key="context_length">Context</th></tr></thead>
+      <tbody id="models-body"><tr><td colspan="6" class="empty-hint">Loading…</td></tr></tbody>
+    </table>
+  </section>
+  <section id="langsmith-panel" class="tab-panel hidden" role="tabpanel" aria-labelledby="langsmith-tab">
+    <div class="settings-form">
+      <div class="field"><label for="langsmith-api-key">LangSmith API key</label><input type="password" id="langsmith-api-key" autocomplete="new-password" placeholder="Use LANGSMITH_API_KEY from environment"><p class="field-help" id="langsmith-key-help">Leave empty and save to use the environment value.</p></div>
+      <div class="field"><label for="langsmith-endpoint">Endpoint</label><input type="text" id="langsmith-endpoint" placeholder="https://eu.api.smith.langchain.com"></div>
+      <div class="field"><label for="langsmith-tracing">Tracing</label><select id="langsmith-tracing"><option value="">Use environment default</option><option value="true">Enabled</option><option value="false">Disabled</option></select></div>
+      <div class="field"><label for="langsmith-project">Project</label><input type="text" id="langsmith-project" placeholder="agentic-consensus"></div>
+      <button type="button" id="save-langsmith">Save LangSmith settings</button>
+    </div>
+  </section>
+</div>
+<div id="status" class="status hidden"><span class="spinner"></span><span id="status-text">Saving…</span></div>
+<div id="success" class="status hidden"><span class="badge ok">Saved</span><span id="success-text"></span></div>
+<div id="error" class="error hidden"></div>
+"""
+
+_SETTINGS_SCRIPT = r"""
+const refreshButton = document.getElementById("refresh-models");
+const modelsBody = document.getElementById("models-body");
+const catalogCount = document.getElementById("catalog-count");
+const catalogUpdated = document.getElementById("catalog-updated");
+const statusEl = document.getElementById("status");
+const statusTextEl = document.getElementById("status-text");
+const successEl = document.getElementById("success");
+const successTextEl = document.getElementById("success-text");
+const modelCountEl = document.getElementById("model-count");
+const modelsSearchEl = document.getElementById("models-search");
+const openRouterKeyEl = document.getElementById("openrouter-api-key");
+const langsmithKeyEl = document.getElementById("langsmith-api-key");
+let allCatalogModels = [];
+let modelsSortKey = "popularity_rank", modelsSortDir = 1;
+
+function selectSettingsTab(name) {
+  const modelsSelected = name === "models";
+  document.getElementById("models-tab").classList.toggle("active", modelsSelected);
+  document.getElementById("models-tab").setAttribute("aria-selected", String(modelsSelected));
+  document.getElementById("models-panel").classList.toggle("hidden", !modelsSelected);
+  document.getElementById("langsmith-tab").classList.toggle("active", !modelsSelected);
+  document.getElementById("langsmith-tab").setAttribute("aria-selected", String(!modelsSelected));
+  document.getElementById("langsmith-panel").classList.toggle("hidden", modelsSelected);
+}
+document.getElementById("models-tab").addEventListener("click", () => selectSettingsTab("models"));
+document.getElementById("langsmith-tab").addEventListener("click", () => selectSettingsTab("langsmith"));
+
+function showSaved(message) {
+  successTextEl.textContent = message;
+  successEl.classList.remove("hidden");
+}
+
+function renderApplicationSettings(settings) {
+  const openrouter = settings.OPENROUTER_API_KEY;
+  document.getElementById("openrouter-key-help").textContent = openrouter.configured
+    ? `A key is configured from ${openrouter.source}. Leave empty and save to fall back to the environment.`
+    : "No key is configured. Runs using OpenRouter require one.";
+  const langsmithKey = settings.LANGSMITH_API_KEY;
+  document.getElementById("langsmith-key-help").textContent = langsmithKey.configured
+    ? `A key is configured from ${langsmithKey.source}. Leave empty and save to fall back to the environment.`
+    : "No LangSmith API key is configured.";
+  const endpointEl = document.getElementById("langsmith-endpoint");
+  endpointEl.value = settings.LANGSMITH_ENDPOINT.value || "";
+  endpointEl.placeholder = settings.LANGSMITH_ENDPOINT.effective_value || "https://eu.api.smith.langchain.com";
+  document.getElementById("langsmith-tracing").value = settings.LANGSMITH_TRACING.value || "";
+  const projectEl = document.getElementById("langsmith-project");
+  projectEl.value = settings.LANGSMITH_PROJECT.value || "";
+  projectEl.placeholder = settings.LANGSMITH_PROJECT.effective_value || "agentic-consensus";
+}
+
+async function saveApplicationSettings(values, message) {
+  errorEl.classList.add("hidden"); successEl.classList.add("hidden");
+  statusTextEl.textContent = "Saving settings…"; statusEl.classList.remove("hidden");
+  try {
+    const response = await fetch("/api/settings", {
+      method: "POST", headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({values}),
+    });
+    const payload = await response.json();
+    if (!response.ok || payload.error) throw new Error(payload.error || `Save failed (${response.status})`);
+    renderApplicationSettings(payload); showSaved(message);
+  } catch (error) {
+    errorEl.textContent = String(error.message || error); errorEl.classList.remove("hidden");
+  } finally { statusEl.classList.add("hidden"); }
+}
+
+document.getElementById("save-openrouter").addEventListener("click", () => {
+  saveApplicationSettings({OPENROUTER_API_KEY: openRouterKeyEl.value}, "OpenRouter setting saved.");
+  openRouterKeyEl.value = "";
+});
+document.getElementById("save-langsmith").addEventListener("click", () => {
+  saveApplicationSettings({
+    LANGSMITH_API_KEY: langsmithKeyEl.value,
+    LANGSMITH_ENDPOINT: document.getElementById("langsmith-endpoint").value,
+    LANGSMITH_TRACING: document.getElementById("langsmith-tracing").value,
+    LANGSMITH_PROJECT: document.getElementById("langsmith-project").value,
+  }, "LangSmith settings saved.");
+  langsmithKeyEl.value = "";
+});
+
+fetch("/api/settings").then(async response => {
+  const payload = await response.json();
+  if (!response.ok || payload.error) throw new Error(payload.error || "Could not load settings");
+  renderApplicationSettings(payload);
+}).catch(error => {
+  errorEl.textContent = String(error.message || error); errorEl.classList.remove("hidden");
+});
+
+function renderCatalog(catalog) {
+  catalogCount.textContent = catalog.saved_count.toLocaleString();
+  catalogUpdated.textContent = catalog.refreshed_at ? new Date(catalog.refreshed_at).toLocaleString() : "Never";
+  allCatalogModels = catalog.models;
+  renderModelsTable();
+}
+
+function renderModelsTable() {
+  const query = modelsSearchEl.value.trim().toLowerCase();
+  const models = allCatalogModels.filter(model => !query ||
+    [model.name, model.provider, model.id].some(value => (value || "").toLowerCase().includes(query))
+  ).slice().sort((left, right) => {
+    const a = left[modelsSortKey], b = right[modelsSortKey];
+    if (a == null && b == null) return 0;
+    if (a == null) return 1;
+    if (b == null) return -1;
+    const av = typeof a === "string" && modelsSortKey !== "name" && modelsSortKey !== "provider" ? Number(a) : a;
+    const bv = typeof b === "string" && modelsSortKey !== "name" && modelsSortKey !== "provider" ? Number(b) : b;
+    return modelsSortDir * (av > bv ? 1 : av < bv ? -1 : 0);
+  });
+  if (!models.length) {
+    modelsBody.innerHTML = `<tr><td colspan="6" class="empty-hint">${allCatalogModels.length ? "No models match your search." : "No models available."}</td></tr>`;
+    return;
+  }
+  modelsBody.innerHTML = models.map(model => `<tr>
+    <td>${model.popularity_rank ?? "—"}</td>
+    <td><strong>${escapeHtml(model.name)}</strong><br><code>${escapeHtml(model.id)}</code>${model.configured_default ? '<br><span class="badge warn">Configured default</span>' : ""}</td>
+    <td>${escapeHtml(model.provider)}</td>
+    <td>${escapeHtml(perMillion(model.prompt_price))}</td>
+    <td>${escapeHtml(perMillion(model.completion_price))}</td>
+    <td>${model.context_length != null ? model.context_length.toLocaleString() : "—"}</td>
+  </tr>`).join("");
+}
+
+document.querySelectorAll("#models-table th[data-key]").forEach(header => {
+  header.addEventListener("click", () => {
+    const key = header.dataset.key;
+    modelsSortDir = modelsSortKey === key ? -modelsSortDir : 1;
+    modelsSortKey = key;
+    renderModelsTable();
+  });
+});
+modelsSearchEl.addEventListener("input", renderModelsTable);
+
+modelCatalogPromise.then(renderCatalog).catch(error => {
+  errorEl.textContent = String(error.message || error); errorEl.classList.remove("hidden");
+});
+
+refreshButton.addEventListener("click", async () => {
+  refreshButton.disabled = true; statusTextEl.textContent = "Updating catalog…"; statusEl.classList.remove("hidden"); errorEl.classList.add("hidden"); successEl.classList.add("hidden");
+  try {
+    const count = Number.parseInt(modelCountEl.value, 10);
+    if (!Number.isInteger(count) || count < 1 || count > 100) throw new Error("Number of models must be between 1 and 100.");
+    const response = await fetch("/api/models/refresh", {
+      method: "POST", headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({count}),
+    });
+    const payload = await response.json();
+    if (!response.ok || payload.error) throw new Error(payload.error || `Refresh failed (${response.status})`);
+    renderCatalog(payload); showSaved("Model catalog updated.");
+  } catch (error) {
+    errorEl.textContent = String(error.message || error); errorEl.classList.remove("hidden");
+  } finally {
+    refreshButton.disabled = false; statusEl.classList.add("hidden");
+  }
+});
+"""
+
+SETTINGS_HTML = _page(active="settings", body=_SETTINGS_BODY, script=_SETTINGS_SCRIPT)
 
 
 # --- Replay -------------------------------------------------------------------
@@ -1541,6 +1891,14 @@ fetch(`/api/history/${runId}`).then(r => {
     `<li><b>Total tokens:</b> ${totals.tokens != null ? totals.tokens.toLocaleString() : "—"}</li>`,
     `<li><b>Total cost:</b> ${formatCost(totals.cost)}</li>`,
   ].join("");
+  if (run.config?.roles) {
+    const selectedRoles = Object.entries(run.config.roles).filter(([role]) =>
+      role !== "evaluator" && !(role === "moderator" && run.variant === "v1-posthoc-reviewer")
+    );
+    runMetaEl.innerHTML += selectedRoles.map(([role, settings]) =>
+      `<li><b>${escapeHtml(ROLE_LABELS[role] || role)}:</b> <code>${escapeHtml(settings.model)}</code></li>`
+    ).join("");
+  }
   renderFlowFromEntries(buildEntriesFromState(run.state));
   layoutEl.classList.remove("hidden");
 }).catch(err => {
@@ -1549,4 +1907,4 @@ fetch(`/api/history/${runId}`).then(r => {
 });
 """
 
-REPLAY_HTML = _page(active="history", body=_REPLAY_BODY, script=_REPLAY_SCRIPT)
+REPLAY_HTML = _page(active="single-run", body=_REPLAY_BODY, script=_REPLAY_SCRIPT)

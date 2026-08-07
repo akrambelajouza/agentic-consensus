@@ -7,7 +7,8 @@ configuration, then executes V1, V2, and V3 sequentially.
 ## Run a comparison
 
 Start the web app and open **New Experiment**. Enter the problem once, choose the
-round limit, and optionally enter one evaluation criterion per line. The criteria
+round limit, choose the Moderator/Author/Reviewer models, and optionally enter one
+evaluation criterion per line. The criteria
 are normalized to stable IDs (`C1`, `C2`, …), frozen with the experiment, and never
 shown to the three workflows. The page reports each architecture as waiting,
 running, complete, or failed.
@@ -43,6 +44,10 @@ answer passes only when every criterion is satisfied. Successful evaluations are
 preserved if another call fails, and the retry action evaluates only missing or
 failed outputs. Evaluator usage and cost are displayed separately and never added to
 workflow cost.
+
+The evaluator model is selected only on the Evaluation tab. Its choice is frozen on
+the first evaluation attempt, so missing or failed evaluations cannot be retried with
+a different judge while successful results remain in the comparison.
 
 Existing History rows are not inferred into experiments by matching problem text.
 Standalone runs remain standalone because similar text does not prove controlled

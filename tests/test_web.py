@@ -16,7 +16,9 @@ from agentic_consensus.variants.registry import VARIANTS
 from agentic_consensus.web_templates import (
     EXPERIMENT_DETAIL_HTML,
     EXPERIMENTS_HTML,
+    INDEX_HTML,
     NEW_EXPERIMENT_HTML,
+    SETTINGS_HTML,
 )
 
 
@@ -136,6 +138,40 @@ class ExperimentWebTests(unittest.TestCase):
         self.assertIn("View run details", EXPERIMENT_DETAIL_HTML)
         self.assertIn('href="/history/${item.id}"', EXPERIMENT_DETAIL_HTML)
         self.assertIn("@media (max-width: 900px)", EXPERIMENT_DETAIL_HTML)
+        self.assertIn('id="evaluator-model"', EXPERIMENT_DETAIL_HTML)
+        self.assertNotIn('id="evaluator-model"', NEW_EXPERIMENT_HTML)
+        self.assertIn('id="experiment-author-model"', NEW_EXPERIMENT_HTML)
+        self.assertIn('id="author-model"', INDEX_HTML)
+        self.assertIn("Update models from OpenRouter", SETTINGS_HTML)
+        self.assertIn("tom-select.complete.min.js", SETTINGS_HTML)
+        self.assertIn('id="models-search"', SETTINGS_HTML)
+        self.assertIn('id="model-count"', SETTINGS_HTML)
+        self.assertIn('id="openrouter-api-key"', SETTINGS_HTML)
+        self.assertIn('id="langsmith-api-key"', SETTINGS_HTML)
+        self.assertIn('id="langsmith-tab"', SETTINGS_HTML)
+        self.assertIn('href="/experiments/new">New experiment', EXPERIMENTS_HTML)
+        self.assertIn('href="/run/new">New run', web.history_page())
+        self.assertIn('<div class="page-header">', EXPERIMENTS_HTML)
+        self.assertIn('<div class="page-header">', web.history_page())
+        self.assertIn('class="back-link" href="/experiments"', NEW_EXPERIMENT_HTML)
+        self.assertIn('class="back-link" href="/run"', web.new_run_page())
+        self.assertEqual(web.runs_page(), web.history_page())
+        self.assertNotIn('id="run-form"', web.index())
+        self.assertIn('id="run-form"', web.new_run_page())
+        self.assertIn('href="/experiments">Consensus', web.index())
+
+    def test_settings_api_persists_overrides_without_returning_secrets(self) -> None:
+        response = web.api_save_settings(web.AppSettingsRequest(values={
+            "OPENROUTER_API_KEY": "secret-value",
+            "LANGSMITH_TRACING": "false",
+            "LANGSMITH_PROJECT": "portfolio-test",
+        }))
+        self.assertEqual(response.status_code, 200)
+        payload = json.loads(response.body)
+        self.assertTrue(payload["OPENROUTER_API_KEY"]["configured"])
+        self.assertNotIn("secret-value", response.body.decode())
+        self.assertEqual(payload["LANGSMITH_TRACING"]["value"], "false")
+        self.assertEqual(db.get_app_settings()["LANGSMITH_PROJECT"], "portfolio-test")
 
 
 class ConfigSnapshotTests(unittest.TestCase):

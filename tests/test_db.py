@@ -40,9 +40,29 @@ class HistoryDbTests(unittest.TestCase):
         db.init_db(self.path)
         self.assertEqual(db.get_run(run_id, path=self.path)["id"], run_id)
 
+    def test_application_settings_upsert_and_clear(self) -> None:
+        db.replace_app_settings(
+            {"OPENROUTER_API_KEY": "saved-secret", "LANGSMITH_TRACING": "true"},
+            path=self.path,
+        )
+        self.assertEqual(
+            db.get_app_settings(path=self.path),
+            {"OPENROUTER_API_KEY": "saved-secret", "LANGSMITH_TRACING": "true"},
+        )
+        db.replace_app_settings(
+            {"OPENROUTER_API_KEY": "", "LANGSMITH_TRACING": "false"},
+            path=self.path,
+        )
+        self.assertEqual(
+            db.get_app_settings(path=self.path), {"LANGSMITH_TRACING": "false"}
+        )
+
     def test_save_and_get_round_trip(self) -> None:
         state = self._state()
-        run_id = db.save_run("the problem", state, path=self.path)
+        snapshot = {"roles": {"agent_a": {"model": "openrouter:vendor/model"}}}
+        run_id = db.save_run(
+            "the problem", state, config_snapshot=snapshot, path=self.path
+        )
 
         row = db.get_run(run_id, path=self.path)
         self.assertIsNotNone(row)
@@ -60,6 +80,7 @@ class HistoryDbTests(unittest.TestCase):
         self.assertEqual(row["state"]["reviews"], state["reviews"])
         self.assertEqual(row["state"]["usage"], state["usage"])
         self.assertEqual(row["state"]["timings"], state["timings"])
+        self.assertEqual(row["config"], snapshot)
 
     def test_save_requires_verdict(self) -> None:
         with self.assertRaises(ValueError):
