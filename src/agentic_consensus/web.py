@@ -1,6 +1,6 @@
 """A local web interface for the consensus loop.
 
-    uv sync --extra web
+    uv sync --extra dev --extra web --extra openrouter
     uv run consensus-web
     uv run consensus-web --host 0.0.0.0 --port 8080
 
@@ -46,6 +46,7 @@ from .web_templates import (
     REPLAY_HTML,
     RUN_HTML,
     SETTINGS_HTML,
+    WORKFLOW_DETAILS_HTML,
 )
 
 
@@ -440,6 +441,11 @@ def new_run_page() -> str:
     return RUN_HTML
 
 
+@app.get("/workflow-details", response_class=HTMLResponse)
+def workflow_details_page() -> str:
+    return WORKFLOW_DETAILS_HTML
+
+
 @app.get("/assets/tom-select/{filename}")
 def tom_select_asset(filename: str) -> Response:
     allowed = {
@@ -451,6 +457,13 @@ def tom_select_asset(filename: str) -> Response:
     return FileResponse(
         _ASSET_ROOT / "tom-select" / filename, media_type=allowed[filename]
     )
+
+
+@app.get("/assets/workflows/{filename}")
+def workflow_asset(filename: str) -> Response:
+    if filename not in {"v1.jpg", "v2.jpg", "v3.jpg"}:
+        return Response(status_code=404)
+    return FileResponse(_ASSET_ROOT / filename, media_type="image/jpeg")
 
 
 @app.get("/history", response_class=HTMLResponse)

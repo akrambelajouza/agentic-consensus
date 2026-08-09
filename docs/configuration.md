@@ -1,8 +1,9 @@
 # Configuration
 
-Everything tunable lives in `.env`. There are no settings to change in source —
-`config.py` reads each one from the environment, and the same values apply whether you
-run the CLI, LangGraph Studio, or the library.
+Configuration starts in `.env`. There are no settings to change in source.
+`config.py` uses environment values for the CLI, LangGraph Studio, and library. The
+web Settings page can save OpenRouter and LangSmith overrides in SQLite; those apply
+to web runs while empty saved fields fall back to `.env`.
 
 ```bash
 cp .env.example .env

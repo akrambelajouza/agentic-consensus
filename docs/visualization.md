@@ -146,12 +146,15 @@ finishes — that's exactly what the CLI's progress output is built on.
 ## 5. Web UI
 
 ```bash
-uv sync --extra web
+uv sync --extra dev --extra web --extra openrouter
 uv run consensus-web    # http://127.0.0.1:8000
 ```
 
-Three pages, reachable from the same top nav:
+The top navigation separates the portfolio explanation from execution and settings:
 
+- **Home** — explains the case study, technology, three architectures, metrics, and
+  evaluation questions. Each architecture links to **Workflow details**, a role-by-role
+  explanation of the moderator, author, reviewer, routing, and revision loop.
 - **Single Run → New run** — choose V1, V2, or V3, submit a problem, and watch it stream live over
   Server-Sent Events: a flow
   panel on the left (Intake → Agent A · Round *N* → Agent B · Round *N* → ... →
@@ -159,7 +162,7 @@ Three pages, reachable from the same top nav:
   the selected node's role, model, effort, duration, token usage, reasoning/cache
   token details, provider-reported cost, and content rendered as Markdown. The flow
   shows tokens and cost per call; a completed run shows total calls, tokens, and cost.
-- **History** — every completed run (any verdict), most recent first, searchable and
+- **Single Run** — every completed run (any verdict), most recent first, searchable and
   sortable by variant, cost, tokens, duration, and outcome. Backed by SQLite
   (`CONSENSUS_DB_PATH`, default
   `consensus.db`) — see [configuration.md](configuration.md#web-ui-run-history).
@@ -167,6 +170,10 @@ Three pages, reachable from the same top nav:
 - **Replay** (`/history/{id}`) — click a row to see that run exactly as it looked
   live, reconstructed entirely from the saved state. No LLM calls, so it's free and
   instant, and it survives server restarts.
+- **Consensus** — create and browse V1/V2/V3 architecture experiments, compare final
+  answers and operational metrics, and run the optional rubric evaluation.
+- **Settings** — refresh the searchable OpenRouter model catalog and manage local
+  OpenRouter/LangSmith overrides.
 
 Export buttons on both New run (after a run finishes) and Replay produce the same
 `.md`/`.html`/`.json` as the CLI's `--out`, via `render_markdown`/`render_html`/

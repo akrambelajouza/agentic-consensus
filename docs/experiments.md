@@ -6,7 +6,7 @@ configuration, then executes V1, V2, and V3 sequentially.
 
 ## Run a comparison
 
-Start the web app and open **New Experiment**. Enter the problem once, choose the
+Start the web app and open **Consensus → New experiment**. Enter the problem once, choose the
 round limit, choose the Moderator/Author/Reviewer models, and optionally enter one
 evaluation criterion per line. The criteria
 are normalized to stable IDs (`C1`, `C2`, …), frozen with the experiment, and never
@@ -19,7 +19,7 @@ saved settings.
 
 ## Read the result
 
-**Experiments** contains one row per problem comparison. Each V1/V2/V3 cell summarizes
+**Consensus** contains one row per problem comparison. Each V1/V2/V3 cell summarizes
 verdict, provider-reported cost, tokens, and duration. The detail page compares:
 
 - verdict and revision rounds;

@@ -93,7 +93,7 @@ remain unmet and what the outstanding objection was.
 ## Setup
 
 ```bash
-uv sync --extra dev --extra openrouter   # one key for both vendors' models
+uv sync --extra dev --extra web --extra openrouter
 cp .env.example .env                     # add your OpenRouter and EU LangSmith keys
 ```
 
@@ -105,10 +105,10 @@ uncomment the `anthropic:` / `openai:` specs in that file and set
 `langchain-anthropic` reads `ANTHROPIC_API_KEY` from the environment. It does **not**
 pick up an `ant auth login` OAuth profile — a real key in `.env` is required.
 
-### Everything is configured in `.env`
+### Environment defaults and web overrides
 
-There are no settings to edit in source. `.env` holds the models, the round cap, the
-stall guard, per-role token budgets, and per-role reasoning effort:
+There are no settings to edit in source. `.env` holds defaults for the models, round
+cap, stall guard, per-role token budgets, and per-role reasoning effort:
 
 ```bash
 MAX_ROUNDS=4                     # author→reviewer rounds before giving up
@@ -129,7 +129,12 @@ how many popular OpenRouter text models to save (30 by default), and refresh the
 catalog manually. Then use the searchable role selectors on **Single Run → New run**
 or **Consensus → New experiment**. UI selections affect only
 the new run or experiment; they never rewrite `.env`. The independent evaluator is
-chosen separately from an experiment's Evaluation tab.
+chosen separately from an experiment's Evaluation tab. Settings can also persist
+OpenRouter and LangSmith overrides in SQLite; empty values fall back to `.env`.
+
+The Home page presents the project as an AI engineering case study. Each architecture
+card links to `/workflow-details`, which explains what the moderator, author, normal
+reviewer, and adversarial reviewer do in that version.
 
 ## Run
 
@@ -173,19 +178,19 @@ Consensus reached
 ### Web UI — run it from a browser
 
 ```bash
-uv sync --extra web
+uv sync --extra dev --extra web --extra openrouter
 uv run consensus-web                  # http://127.0.0.1:8000
 ```
 
-Choose a workflow, submit a problem on **Run**, and watch it stream live node by
+Choose a workflow on **Single Run → New run**, submit a problem, and watch it stream live node by
 node (the same events the CLI logs to stderr, over Server-Sent Events): a flow panel
 on the left, and a details
 panel on the right showing each node's model, effort, duration, token usage,
 provider-reported cost, and content rendered as markdown. Completed runs also show
 total calls, tokens, and cost. OpenRouter costs come directly from its response
 rather than a local price estimate; providers that do not report cost are labelled
-unavailable. No auth, no external service — it's a thin transport around
-`graph.stream()`, so it reads whatever `.env` already configures. Use
+unavailable. It is a thin transport around `graph.stream()` and uses the selected
+OpenRouter models plus the saved/environment credentials. Use
 `--host 0.0.0.0` to expose it beyond localhost, `--port` to change the port.
 
 Every completed run is saved to a local SQLite file
@@ -194,13 +199,14 @@ searchable, sortable table of past runs. Click one to replay it on its own page,
 identical to how it looked live, reconstructed entirely from the saved state (no
 LLM calls). Runs that error out mid-way are not saved.
 
-Use **New Experiment** to freeze one problem and model configuration, then run V1,
-V2, and V3 sequentially. **Experiments** keeps one row per comparison instead of one
+Use **Consensus → New experiment** to freeze one problem and model configuration,
+then run V1, V2, and V3 sequentially. **Consensus** keeps one row per comparison instead of one
 row per run; its detail page places verdict, calls, tokens, provider cost, duration,
 and final responses side by side with links to each full replay. A failed variant is
 kept as a visible execution slot and can be retried without rerunning successful
-variants. Quality judging is deliberately separate and currently shown as
-**Evaluation: Not evaluated**.
+variants. Optional criteria remain hidden from the workflows. From the Evaluation
+tab, an independently selected evaluator grades each anonymized final answer against
+those criteria; evaluator usage and cost remain separate from workflow cost.
 
 ### Studio — inspect and replay individual steps
 
@@ -272,6 +278,9 @@ src/agentic_consensus/
 ├── transcript.py  markdown / HTML / JSON renderers
 ├── __main__.py    CLI runner
 ├── web.py         FastAPI app (`--extra web`): routes, worker thread, persistence
-├── web_templates.py  Run/Experiments/History/Replay pages — self-contained HTML
-└── db.py          SQLite run history and experiment lifecycle
+├── web_templates.py  Home/Run/Consensus/History/Settings pages
+├── model_catalog.py  manually refreshed OpenRouter model catalog
+├── runtime_settings.py  SQLite settings layered over environment defaults
+├── assets/        local UI assets and homepage workflow images
+└── db.py          SQLite runs, experiments, evaluations, catalog, and settings
 ```

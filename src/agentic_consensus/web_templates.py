@@ -19,6 +19,12 @@ looked live.
 
 from __future__ import annotations
 
+import json
+
+from .variants.v1_posthoc_reviewer import prompts as v1_prompts
+from .variants.v2_moderated_reviewer import prompts as v2_prompts
+from .variants.v3_adversarial_reviewer import prompts as v3_prompts
+
 _SHARED_CSS = """
 :root { color-scheme: light dark; --fg:#111; --muted:#666; --bg:#fff; --card:#f6f6f7;
         --line:#e2e2e5; --ok:#0a7d33; --warn:#a2500a; --err:#c0392b; --accent:#3b5bdb; }
@@ -82,6 +88,7 @@ pre { white-space:pre-wrap; word-wrap:break-word; background:var(--bg);
 .topnav { display:flex; justify-content:space-between; align-items:center; gap:1rem;
           margin:0 0 1.75rem; padding-bottom:1rem; border-bottom:1px solid var(--line); }
 .topnav-links { display:flex; gap:1.25rem; flex-wrap:wrap; }
+.topnav-actions { display:flex; align-items:center; gap:1rem; }
 .topnav a { color:var(--muted); text-decoration:none; font-weight:600; font-size:.9rem;
             padding:.3rem 0; border-bottom:2px solid transparent; }
 .topnav a:hover { color:var(--fg); }
@@ -195,14 +202,19 @@ table.runs-table td.problem-cell { max-width:28rem; overflow:hidden; text-overfl
 .case-header { padding:1.25rem 0 2.75rem; border-bottom:1px solid var(--line); }
 .case-header .eyebrow { color:var(--accent); font-size:.78rem; font-weight:800;
                         letter-spacing:.1em; text-transform:uppercase; margin-bottom:.7rem; }
-.case-header h1 { max-width:55rem; font-size:clamp(2rem,5vw,3.6rem); line-height:1.1;
+.case-header h1 { font-size:clamp(2rem,5vw,3.6rem); line-height:1.1;
                   margin-bottom:1rem; }
-.case-header .subtitle { max-width:52rem; color:var(--muted); font-size:1.12rem; margin:0; }
+.case-header .subtitle { color:var(--muted); font-size:1.12rem; margin:0; }
 .case-section { padding:2.75rem 0; border-bottom:1px solid var(--line); }
 .case-section h2 { color:var(--fg); font-size:1.4rem; text-transform:none;
                    letter-spacing:0; margin-bottom:.8rem; }
 .case-section > p { max-width:55rem; color:var(--muted); }
 .case-section .lead { color:var(--fg); font-size:1.05rem; }
+.case-two-column { display:grid; grid-template-columns:repeat(2,minmax(0,1fr));
+                   gap:2.5rem; border-bottom:1px solid var(--line); }
+.case-two-column .case-section { border-bottom:0; }
+.case-two-column .case-section:last-child { border-left:1px solid var(--line);
+                                            padding-left:2.5rem; }
 .case-stack { display:flex; flex-wrap:wrap; gap:.55rem; margin-top:1.2rem; }
 .case-tag { border:1px solid var(--line); border-radius:999px; background:var(--card);
             padding:.35rem .75rem; font-size:.8rem; font-weight:700; }
@@ -214,10 +226,9 @@ table.runs-table td.problem-cell { max-width:28rem; overflow:hidden; text-overfl
 .case-card .version { color:var(--accent); font-size:.75rem; font-weight:800; }
 .case-card h3 { margin:.3rem 0 .4rem; font-size:1.05rem; }
 .case-card p { margin:0; color:var(--muted); font-size:.9rem; }
-.workflow-image-placeholder { aspect-ratio:16/9; border:1px dashed var(--line);
-                              border-width:0 0 1px; background:var(--bg); color:var(--muted);
-                              display:flex; flex-direction:column; align-items:center;
-                              justify-content:center; text-align:center; padding:1rem; }
+.case-card .run-details-link { margin-top:1rem; }
+.workflow-image { display:block; width:100%; height:22rem; object-fit:contain;
+                  border-bottom:1px solid var(--line); background:#111722; }
 .case-metrics { display:grid; grid-template-columns:repeat(5,minmax(0,1fr)); gap:.75rem;
                 margin-top:1.3rem; }
 .case-metric { border:1px solid var(--line); border-radius:10px; padding:.9rem;
@@ -229,6 +240,41 @@ table.runs-table td.problem-cell { max-width:28rem; overflow:hidden; text-overfl
 .case-question { border-left:3px solid var(--accent); background:var(--card);
                  border-radius:0 8px 8px 0; padding:.8rem 1rem; font-size:.9rem; }
 .case-footer { padding:2rem 0 .5rem; color:var(--muted); font-size:.85rem; }
+.workflow-detail { scroll-margin-top:1rem; }
+.workflow-detail > p { max-width:none; }
+.workflow-detail .version { color:var(--accent); font-size:.78rem; font-weight:800; }
+.workflow-detail-content { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,2fr);
+                           gap:2rem; align-items:start; margin-top:1.25rem; }
+.workflow-detail-content > img { display:block; width:100%; max-height:24rem;
+                                 object-fit:contain; border-radius:10px;
+                                 background:#111722; }
+.workflow-detail-content .role-grid { grid-template-columns:1fr; margin-top:0; }
+.role-grid { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:1rem;
+             margin-top:1.25rem; }
+.role-grid.two-roles { grid-template-columns:repeat(2,minmax(0,1fr)); }
+.role-card { border:1px solid var(--line); border-radius:10px; background:var(--card);
+             padding:1rem; }
+.role-card-header { display:flex; align-items:flex-start; justify-content:space-between;
+                    gap:1rem; margin-bottom:.4rem; }
+.role-prompt-actions { display:flex; flex-wrap:wrap; justify-content:flex-end; gap:.35rem; }
+.role-card h3 { margin:0; font-size:1rem; }
+.role-card p { margin:0; color:var(--muted); font-size:.9rem; }
+.show-prompt { flex:0 0 auto; padding:.25rem .55rem; border:1px solid var(--accent);
+               border-radius:6px; background:transparent; color:var(--accent);
+               font:inherit; font-size:.72rem; font-weight:700; cursor:pointer; }
+.show-prompt:hover { background:var(--accent); color:white; }
+.prompt-modal { width:min(48rem,calc(100% - 2rem)); max-height:85vh; padding:0;
+                border:1px solid var(--line); border-radius:12px;
+                background:var(--bg); color:var(--fg); box-shadow:0 20px 60px #0008; }
+.prompt-modal::backdrop { background:#0009; }
+.prompt-modal-header { display:flex; align-items:center; justify-content:space-between;
+                       gap:1rem; padding:1rem 1.25rem; border-bottom:1px solid var(--line); }
+.prompt-modal-header h2 { margin:0; }
+.prompt-modal-close { border:0; background:transparent; color:var(--muted);
+                      font-size:1.6rem; line-height:1; cursor:pointer; }
+.prompt-modal pre { max-height:65vh; margin:0; padding:1.25rem; overflow:auto;
+                    border:0; border-radius:0; background:var(--card); }
+.workflow-path { color:var(--accent); font-weight:700; font-size:.88rem; }
 .comparison-table-wrap { overflow-x:auto; margin:1.25rem 0; }
 .comparison-table { width:100%; border-collapse:collapse; }
 .comparison-table th,.comparison-table td { border-bottom:1px solid var(--line);
@@ -249,11 +295,17 @@ table.runs-table td.problem-cell { max-width:28rem; overflow:hidden; text-overfl
 .answer-actions a { color:var(--accent); font-size:.82rem; font-weight:600;
                     text-decoration:none; }
 @media (max-width: 900px) {
-  .architecture-list,.answers-grid,.model-grid,.case-architectures { grid-template-columns:1fr; }
+  .architecture-list,.answers-grid,.model-grid,.case-architectures,.role-grid { grid-template-columns:1fr; }
+  .role-grid.two-roles { grid-template-columns:1fr; }
   .case-metrics { grid-template-columns:repeat(2,minmax(0,1fr)); }
 }
 @media (max-width: 680px) {
   .case-questions,.case-metrics { grid-template-columns:1fr; }
+  .case-two-column { grid-template-columns:1fr; gap:0; }
+  .case-two-column .case-section:first-child { padding-bottom:1.5rem; }
+  .case-two-column .case-section:last-child { border-left:0; padding:1.5rem 0 2.75rem; }
+  .workflow-detail-content { grid-template-columns:1fr; }
+  .workflow-detail-content > img { width:auto; max-width:100%; justify-self:center; }
 }
 
 .layout { display:grid; grid-template-columns: minmax(260px, 22rem) 1fr; gap:1.5rem;
@@ -738,10 +790,12 @@ def _nav_html(active: str) -> str:
         f'<a href="/"{cls("home")}>Home</a>'
         f'<a href="/experiments"{cls("consensus")}>Consensus</a>'
         f'<a href="/history"{cls("single-run")}>Single Run</a>'
-        f'<a href="/settings"{cls("settings")}>Settings</a>'
         "</div>"
+        '<div class="topnav-actions">'
+        f'<a href="/workflow-details"{cls("workflow-details")}>Workflow details</a>'
+        f'<a href="/settings"{cls("settings")}>Settings</a>'
         '<button type="button" id="theme-toggle" class="theme-toggle" '
-        'aria-label="Toggle light/dark theme"></button>'
+        'aria-label="Toggle light/dark theme"></button></div>'
         "</nav>"
     )
 
@@ -1000,52 +1054,56 @@ _LANDING_BODY = """
   <p class="subtitle">I built and compared different AI review workflows to see when extra agents improve quality and when the extra cost is worth it.</p>
 </header>
 
-<section class="case-section">
-  <h2>Why I built it</h2>
-  <p class="lead">I built this project after seeing the same pattern many times: one AI agent creates an answer, but a second agent finds missing details, edge cases, or problems. The first agent then improves its answer. The second agent checks it again.</p>
-  <p>This happened when reviewing pull requests, creating AI skills, and building evaluation frameworks. I sometimes had to move an answer back and forth between different models until the result was good enough.</p>
-  <p>So I built a small workflow to automate this process and compare different ways of doing AI review.</p>
-</section>
+<div class="case-two-column">
+  <section class="case-section">
+    <h2>Why I built it</h2>
+    <p class="lead">I built this project after seeing the same pattern many times: one AI agent creates an answer, but a second agent finds missing details, edge cases, or problems. The first agent then improves its answer. The second agent checks it again.</p>
+    <p>This happened when reviewing pull requests, creating AI skills, and building evaluation frameworks. I sometimes had to move an answer back and forth between different models until the result was good enough.</p>
+  </section>
 
-<section class="case-section">
-  <h2>How I built it</h2>
-  <p>I use <strong>LangGraph</strong> to build the workflows and manage the steps between agents. I use <strong>LangSmith</strong> to trace runs and inspect what each agent does. The app also evaluates final answers against saved criteria.</p>
-  <div class="case-stack">
-    <span class="case-tag">LangGraph</span>
-    <span class="case-tag">LangSmith</span>
-    <span class="case-tag">LLM Evaluation</span>
-    <span class="case-tag">Multi-Agent Workflows</span>
-    <span class="case-tag">Cost Analysis</span>
-    <span class="case-tag">Tracing &amp; Observability</span>
-  </div>
-</section>
+  <section class="case-section">
+    <h2>How I built it</h2>
+    <p>I use <strong>LangGraph</strong> to build the workflows and manage the steps between agents. I use <strong>LangSmith</strong> to trace runs and inspect what each agent does. The app also evaluates final answers against saved criteria.</p>
+    <div class="case-stack">
+      <span class="case-tag">LangGraph</span>
+      <span class="case-tag">LangSmith</span>
+      <span class="case-tag">LLM Evaluation</span>
+      <span class="case-tag">Multi-Agent Workflows</span>
+      <span class="case-tag">Cost Analysis</span>
+      <span class="case-tag">Tracing &amp; Observability</span>
+    </div>
+  </section>
+</div>
 
-<section class="case-section">
+<section class="case-section workflow-detail">
   <h2>Three ways to reach consensus</h2>
   <p>The small workflow became an experiment. I created three versions to compare their answers, cost, tokens, and speed.</p>
   <div class="case-architectures">
     <article class="case-card">
-      <div class="workflow-image-placeholder" role="img" aria-label="Placeholder for the V1 workflow diagram">Architecture image / graph</div>
+      <img class="workflow-image" src="/assets/workflows/v1.jpg" alt="V1 graph: Agent A and Agent B review loop">
       <div class="case-card-content">
         <span class="version">V1 — Two agents</span>
         <h3>Post-hoc Review</h3>
         <p>Agent A writes the answer first. Agent B then creates review criteria and checks the answer. If changes are needed, it sends feedback to Agent A.</p>
+        <a class="run-details-link" href="/workflow-details#v1">More details</a>
       </div>
     </article>
     <article class="case-card">
-      <div class="workflow-image-placeholder" role="img" aria-label="Placeholder for the V2 workflow diagram">Architecture image / graph</div>
+      <img class="workflow-image" src="/assets/workflows/v2.jpg" alt="V2 graph: intake, Agent A and Agent B review loop, then finalize">
       <div class="case-card-content">
         <span class="version">V2 — With a moderator</span>
         <h3>Moderated Review</h3>
         <p>A moderator first makes the user's problem clearer and creates fixed criteria. Agent A writes the answer, and Agent B reviews it against those criteria.</p>
+        <a class="run-details-link" href="/workflow-details#v2">More details</a>
       </div>
     </article>
     <article class="case-card">
-      <div class="workflow-image-placeholder" role="img" aria-label="Placeholder for the V3 workflow diagram">Architecture image / graph</div>
+      <img class="workflow-image" src="/assets/workflows/v3.jpg" alt="V3 graph: intake, Agent A and adversarial Agent B review loop, then finalize">
       <div class="case-card-content">
         <span class="version">V3 — with an adversarial reviewer</span>
         <h3>Adversarial Review</h3>
         <p>This version also starts with a moderator. But Agent B tries to prove that the answer is not ready. It approves only when it cannot find a real blocker.</p>
+        <a class="run-details-link" href="/workflow-details#v3">More details</a>
       </div>
     </article>
   </div>
@@ -1080,6 +1138,122 @@ _LANDING_BODY = """
 HOME_HTML = _page(active="home", body=_LANDING_BODY, script="")
 # Backwards-compatible template name for code importing the old home/run page.
 INDEX_HTML = RUN_HTML
+
+
+# --- Workflow details ---------------------------------------------------------
+
+_WORKFLOW_DETAILS_BODY = """
+<a class="back-link" href="/">&larr; Back to home</a>
+<h1>How the workflows work</h1>
+<p class="sub">All versions repeat the same basic idea: Agent A writes, Agent B reviews, and Agent A revises when needed. The difference is when criteria are created and how Agent B reviews the answer.</p>
+
+<section class="case-section workflow-detail" id="v1">
+  <div class="workflow-detail-header">
+    <span class="version">V1 — Two agents</span>
+    <h2>Post-hoc Review</h2>
+    <p class="workflow-path">Agent A → Agent B → revise or finish</p>
+    <p>This is the simplest and cheapest version. There is no moderator. Agent B creates the criteria only after Agent A has written the first answer.</p>
+  </div>
+  <div class="workflow-detail-content">
+    <img src="/assets/workflows/v1.jpg" alt="V1 author and reviewer graph">
+    <div class="role-grid">
+      <article class="role-card"><div class="role-card-header"><h3>Agent A — Author</h3><button class="show-prompt" type="button" data-prompt="v1_agent_a">Show prompt</button></div><p>Receives the original user problem and writes a complete answer. After a rejection, it receives Agent B's criteria, feedback, and required changes, then writes a complete revised answer.</p></article>
+      <article class="role-card"><div class="role-card-header"><h3>Agent B — Reviewer</h3><button class="show-prompt" type="button" data-prompt="v1_agent_b">Show prompt</button></div><p>Creates three to six checkable criteria from the original problem and reviews the answer in the same call. It gives a score, explains problems, requests changes, and decides whether to approve.</p></article>
+    </div>
+  </div>
+  <p>If Agent B approves, the workflow ends. Otherwise Agent A tries again until approval, the round limit, or the stall limit is reached.</p>
+</section>
+
+<section class="case-section workflow-detail" id="v2">
+  <div class="workflow-detail-header">
+    <span class="version">V2 — With a moderator</span>
+    <h2>Moderated Review</h2>
+    <p class="workflow-path">Moderator → Agent A → Agent B → Moderator</p>
+    <p>This version creates the criteria before the first answer. The criteria stay fixed, so the reviewer cannot change the goal after seeing the proposal.</p>
+  </div>
+  <div class="workflow-detail-content">
+    <img src="/assets/workflows/v2.jpg" alt="V2 moderated author and reviewer graph">
+    <div class="role-grid">
+      <article class="role-card"><div class="role-card-header"><h3>Moderator — Intake and final answer</h3><div class="role-prompt-actions"><button class="show-prompt" type="button" data-prompt="v2_moderator_intake">Intake prompt</button><button class="show-prompt" type="button" data-prompt="v2_moderator_success">Success prompt</button><button class="show-prompt" type="button" data-prompt="v2_moderator_failure">Failure prompt</button></div></div><p>First, it rewrites the user's problem clearly and creates three to six fixed acceptance criteria. At the end, it prepares the final result and clearly reports any criteria that are still not satisfied.</p></article>
+      <article class="role-card"><div class="role-card-header"><h3>Agent A — Author</h3><button class="show-prompt" type="button" data-prompt="v2_agent_a">Show prompt</button></div><p>Receives the clearer problem and fixed criteria before writing. On later rounds, it also receives the previous review and must return a full revised answer.</p></article>
+      <article class="role-card"><div class="role-card-header"><h3>Agent B — Reviewer</h3><button class="show-prompt" type="button" data-prompt="v2_agent_b">Show prompt</button></div><p>Checks the answer only against the fixed criteria. It gives a score, explains what is wrong, lists required changes, and approves when the answer is ready.</p></article>
+    </div>
+  </div>
+  <p>A deterministic routing rule—not another LLM—chooses whether to return to Agent A or continue to the moderator's final step.</p>
+</section>
+
+<section class="case-section workflow-detail" id="v3">
+  <div class="workflow-detail-header">
+    <span class="version">V3 — With an adversarial reviewer</span>
+    <h2>Adversarial Review</h2>
+    <p class="workflow-path">Moderator → Agent A → Adversarial Agent B → Moderator</p>
+    <p>V3 keeps the same moderator and fixed criteria as V2. The difference is Agent B: its main goal is to prove that the answer is not ready.</p>
+  </div>
+  <div class="workflow-detail-content">
+    <img src="/assets/workflows/v3.jpg" alt="V3 moderated graph with an adversarial reviewer">
+    <div class="role-grid">
+      <article class="role-card"><div class="role-card-header"><h3>Moderator — Intake and final answer</h3><div class="role-prompt-actions"><button class="show-prompt" type="button" data-prompt="v3_moderator_intake">Intake prompt</button><button class="show-prompt" type="button" data-prompt="v3_moderator_success">Success prompt</button><button class="show-prompt" type="button" data-prompt="v3_moderator_failure">Failure prompt</button></div></div><p>Creates the clear problem and fixed criteria before Agent A starts. At the end, it presents the best result and any remaining blockers.</p></article>
+      <article class="role-card"><div class="role-card-header"><h3>Agent A — Author</h3><button class="show-prompt" type="button" data-prompt="v3_agent_a">Show prompt</button></div><p>Writes against the fixed criteria. When Agent B finds a blocker, Agent A receives the evidence and requested correction, then writes the complete answer again.</p></article>
+      <article class="role-card"><div class="role-card-header"><h3>Agent B — Adversarial reviewer</h3><button class="show-prompt" type="button" data-prompt="v3_agent_b">Show prompt</button></div><p>Looks for missing requirements, violated criteria, edge cases, ambiguities, and risks. It must provide evidence for real blockers. It does not give a numeric score and approves only when no blocking defect remains.</p></article>
+    </div>
+  </div>
+  <p>The routing rule repeats the author/reviewer loop while blocking findings remain, unless the round or stall limit ends the process.</p>
+</section>
+
+<section class="case-section">
+  <h2>Evaluation happens after the workflows</h2>
+  <p>The optional experiment evaluator is separate from the moderator and reviewers above. It receives one anonymized final answer at a time and checks it against the evaluation criteria supplied by the user.</p>
+</section>
+
+<dialog class="prompt-modal" id="prompt-modal" aria-labelledby="prompt-modal-title">
+  <div class="prompt-modal-header">
+    <h2 id="prompt-modal-title">Agent prompt</h2>
+    <button class="prompt-modal-close" id="prompt-modal-close" type="button" aria-label="Close prompt">&times;</button>
+  </div>
+  <pre id="prompt-modal-content"></pre>
+</dialog>
+"""
+
+_WORKFLOW_PROMPTS = {
+    "v1_agent_a": {"title": "V1 · Agent A — Author", "prompt": v1_prompts.AGENT_A},
+    "v1_agent_b": {"title": "V1 · Agent B — Reviewer", "prompt": v1_prompts.AGENT_B},
+    "v2_moderator_intake": {"title": "V2 · Moderator — Intake", "prompt": v2_prompts.MODERATOR_INTAKE},
+    "v2_moderator_success": {"title": "V2 · Moderator — Successful finalization", "prompt": v2_prompts.FINALIZE_CONSENSUS},
+    "v2_moderator_failure": {"title": "V2 · Moderator — Unsuccessful finalization", "prompt": v2_prompts.FINALIZE_NO_CONSENSUS},
+    "v2_agent_a": {"title": "V2 · Agent A — Author", "prompt": v2_prompts.AGENT_A},
+    "v2_agent_b": {"title": "V2 · Agent B — Reviewer", "prompt": v2_prompts.AGENT_B},
+    "v3_moderator_intake": {"title": "V3 · Moderator — Intake", "prompt": v3_prompts.MODERATOR_INTAKE},
+    "v3_moderator_success": {"title": "V3 · Moderator — Successful finalization", "prompt": v3_prompts.FINALIZE_CONSENSUS},
+    "v3_moderator_failure": {"title": "V3 · Moderator — Unsuccessful finalization", "prompt": v3_prompts.FINALIZE_NO_CONSENSUS},
+    "v3_agent_a": {"title": "V3 · Agent A — Author", "prompt": v3_prompts.AGENT_A},
+    "v3_agent_b": {"title": "V3 · Agent B — Adversarial reviewer", "prompt": v3_prompts.AGENT_B},
+}
+
+_WORKFLOW_DETAILS_SCRIPT = f"""
+const workflowPrompts = {json.dumps(_WORKFLOW_PROMPTS)};
+const promptModal = document.getElementById("prompt-modal");
+const promptTitle = document.getElementById("prompt-modal-title");
+const promptContent = document.getElementById("prompt-modal-content");
+
+document.querySelectorAll(".show-prompt").forEach(button => {{
+  button.addEventListener("click", () => {{
+    const item = workflowPrompts[button.dataset.prompt];
+    if (!item) return;
+    promptTitle.textContent = item.title;
+    promptContent.textContent = item.prompt.trim();
+    promptModal.showModal();
+  }});
+}});
+
+document.getElementById("prompt-modal-close").addEventListener("click", () => promptModal.close());
+promptModal.addEventListener("click", event => {{
+  if (event.target === promptModal) promptModal.close();
+}});
+"""
+
+WORKFLOW_DETAILS_HTML = _page(
+    active="workflow-details", body=_WORKFLOW_DETAILS_BODY, script=_WORKFLOW_DETAILS_SCRIPT
+)
 
 
 # --- New experiment -----------------------------------------------------------
@@ -1698,13 +1872,12 @@ function renderRunsTable() {
   }
 
   tbodyEl.innerHTML = rows.map(r => {
-    const verdictCls = r.verdict === "consensus" ? "ok" : "warn";
     const problem = escapeHtml(r.problem);
     return `<tr data-id="${r.id}">
       <td>${new Date(r.created_at).toLocaleString()}</td>
       <td>${VARIANT_LABELS[r.variant] || r.variant}</td>
       <td class="problem-cell" title="${problem}">${problem}</td>
-      <td><span class="badge ${verdictCls}">${VERDICT_LABELS[r.verdict] || r.verdict}</span></td>
+      <td>${VERDICT_LABELS[r.verdict] || r.verdict}</td>
       <td>${r.rounds ?? "?"} / ${r.max_rounds ?? "?"}</td>
       <td>${r.last_score != null ? `${r.last_score}/10` : "—"}</td>
       <td>${formatCost(r.total_cost)}</td>

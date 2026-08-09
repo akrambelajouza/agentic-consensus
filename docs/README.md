@@ -8,7 +8,7 @@ fixed criteria while replacing scoring with an adversarial search for defects.
 | --- | --- |
 | [architecture.md](architecture.md) | The graph, the state, the routing rules, why the moderator isn't the router |
 | [variants.md](variants.md) | V1–V3 topology, reviewer behavior, selection, and cost shape |
-| [configuration.md](configuration.md) | Every `.env` variable: rounds, stall guard, models, token budgets, effort |
+| [configuration.md](configuration.md) | Environment defaults plus persisted web settings, models, budgets, and tracing |
 | [experiments.md](experiments.md) | Running one controlled problem through V1–V3 and reading the comparison |
 | [providers.md](providers.md) | Anthropic, OpenAI and OpenRouter; mixing vendors across roles |
 | [visualization.md](visualization.md) | Watching a run, the web UI, and exporting a shareable transcript |
@@ -17,12 +17,13 @@ fixed criteria while replacing scoring with an adversarial search for defects.
 ## 60-second version
 
 ```bash
-uv sync --extra dev --extra openrouter
+uv sync --extra dev --extra web --extra openrouter
 cp .env.example .env          # add OpenRouter and EU LangSmith keys
 ```
 
-`.env` holds **every** tunable — models, round cap, stall guard, token budgets,
-reasoning effort. Nothing needs editing in source. See
+`.env` holds the defaults for models, round cap, stall guard, token budgets, and
+reasoning effort. The web Settings page can persist OpenRouter and LangSmith
+overrides in SQLite. Nothing needs editing in source. See
 [configuration.md](configuration.md).
 
 Run it from the terminal and get an HTML transcript:
@@ -44,7 +45,7 @@ uv run langgraph dev --studio-url https://eu.smith.langchain.com
 Or from a browser, with run history and saved architecture comparisons:
 
 ```bash
-uv sync --extra web
+uv sync --extra dev --extra web --extra openrouter
 uv run consensus-web    # http://127.0.0.1:8000
 ```
 

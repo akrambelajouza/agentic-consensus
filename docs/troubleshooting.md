@@ -1,5 +1,19 @@
 # Troubleshooting
 
+### `uv run langgraph`: `No such file or directory`
+
+The Studio CLI is in the optional `dev` dependencies. Install it together with the
+extras used by the browser application and OpenRouter:
+
+```bash
+uv sync --extra dev --extra web --extra openrouter
+uv run langgraph dev --studio-url https://eu.smith.langchain.com
+```
+
+If `.venv/bin/langgraph` is still absent, delete no data: run the same `uv sync`
+command again and inspect its dependency error. Python 3.11 or newer is required by
+the current in-memory Studio server.
+
 ## Setup
 
 ### `GraphLoadError: attempted relative import with no known parent package`

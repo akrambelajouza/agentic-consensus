@@ -199,6 +199,9 @@ src/agentic_consensus/
 ├── transcript.py  markdown / HTML / JSON renderers
 ├── __main__.py    CLI runner
 ├── web.py         FastAPI app (`--extra web`): routes, worker thread, persistence
-├── web_templates.py  Run/Experiments/History/Replay pages — self-contained HTML
-└── db.py          SQLite run history and experiment lifecycle
+├── web_templates.py  Home/Run/Consensus/History/Settings pages
+├── model_catalog.py  manually refreshed OpenRouter catalog
+├── runtime_settings.py  persisted web overrides and environment fallback
+├── assets/        local UI assets and homepage workflow images
+└── db.py          SQLite runs, experiments, evaluations, catalog, and settings
 ```

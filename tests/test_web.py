@@ -19,6 +19,7 @@ from agentic_consensus.web_templates import (
     INDEX_HTML,
     NEW_EXPERIMENT_HTML,
     SETTINGS_HTML,
+    WORKFLOW_DETAILS_HTML,
 )
 
 
@@ -159,11 +160,32 @@ class ExperimentWebTests(unittest.TestCase):
         self.assertNotIn('id="run-form"', web.index())
         self.assertIn('id="run-form"', web.new_run_page())
         self.assertIn('href="/experiments">Consensus', web.index())
+        self.assertIn('class="topnav-actions"', web.index())
+        self.assertIn('<div class="topnav-actions">', web.index())
+        self.assertIn('<a href="/settings">Settings</a>', web.index())
         self.assertIn("Why I built it", web.index())
+        self.assertIn('class="case-two-column"', web.index())
         self.assertIn("V1 — Two agents", web.index())
         self.assertIn("V2 — With a moderator", web.index())
         self.assertIn("V3 — Adversarial review", web.index())
-        self.assertEqual(web.index().count('class="workflow-image-placeholder"'), 3)
+        self.assertIn('src="/assets/workflows/v1.jpg"', web.index())
+        self.assertIn('src="/assets/workflows/v2.jpg"', web.index())
+        self.assertIn('src="/assets/workflows/v3.jpg"', web.index())
+        self.assertEqual(web.workflow_asset("missing.jpg").status_code, 404)
+        self.assertEqual(web.workflow_asset("v1.jpg").media_type, "image/jpeg")
+        self.assertEqual(web.index().count('href="/workflow-details#'), 3)
+        self.assertIn("Agent B — Adversarial reviewer", WORKFLOW_DETAILS_HTML)
+        self.assertEqual(WORKFLOW_DETAILS_HTML.count('class="workflow-detail-content"'), 3)
+        self.assertEqual(WORKFLOW_DETAILS_HTML.count('class="show-prompt"'), 12)
+        self.assertIn('id="prompt-modal"', WORKFLOW_DETAILS_HTML)
+        self.assertIn('data-prompt="v2_moderator_intake"', WORKFLOW_DETAILS_HTML)
+        self.assertIn('data-prompt="v3_moderator_failure"', WORKFLOW_DETAILS_HTML)
+        self.assertIn("Your primary objective is to prove", WORKFLOW_DETAILS_HTML)
+        self.assertIn(
+            'href="/workflow-details" class="active">Workflow details</a>',
+            WORKFLOW_DETAILS_HTML,
+        )
+        self.assertIn("Evaluation happens after the workflows", web.workflow_details_page())
 
     def test_settings_api_persists_overrides_without_returning_secrets(self) -> None:
         response = web.api_save_settings(web.AppSettingsRequest(values={
