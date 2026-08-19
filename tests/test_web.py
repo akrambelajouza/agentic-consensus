@@ -164,10 +164,40 @@ class ExperimentWebTests(unittest.TestCase):
         self.assertIn('<div class="topnav-actions">', web.index())
         self.assertIn('<a href="/settings">Settings</a>', web.index())
         self.assertIn("Why I built it", web.index())
-        self.assertIn('class="case-two-column"', web.index())
+        self.assertIn('class="landing-memo"', web.index())
+        self.assertIn('class="landing-rail"', web.index())
+        self.assertIn('--bg:#f3ecdd', web.index())
+        self.assertIn(':root[data-theme="dark"]', web.index())
+        self.assertIn('--bg:#0a1220', web.index())
+        self.assertIn(':root { scroll-behavior:smooth; }', web.index())
+        self.assertIn('.workflow-image { height:25rem;', web.index())
+        for themed_page in (
+            web.index(),
+            web.new_run_page(),
+            web.history_page(),
+            web.workflow_details_page(),
+            EXPERIMENTS_HTML,
+            NEW_EXPERIMENT_HTML,
+            EXPERIMENT_DETAIL_HTML,
+            web.replay_page(1),
+            SETTINGS_HTML,
+        ):
+            self.assertIn('--bg:#f3ecdd', themed_page)
+            self.assertIn('--bg:#0a1220', themed_page)
+        self.assertNotIn('id="prototype-switcher"', web.index())
+        self.assertNotIn('data-variant=', web.index())
+        for section_id in (
+            "why-i-built-it",
+            "how-i-built-it",
+            "ways-to-reach-consensus",
+            "what-i-compare",
+            "questions-i-want-to-answer",
+        ):
+            self.assertIn(f'href="#{section_id}"', web.index())
+            self.assertIn(f'id="{section_id}"', web.index())
         self.assertIn("V1 — Two agents", web.index())
         self.assertIn("V2 — With a moderator", web.index())
-        self.assertIn("V3 — Adversarial review", web.index())
+        self.assertIn("V3 — with an adversarial reviewer", web.index())
         self.assertIn('src="/assets/workflows/v1.jpg"', web.index())
         self.assertIn('src="/assets/workflows/v2.jpg"', web.index())
         self.assertIn('src="/assets/workflows/v3.jpg"', web.index())
@@ -186,6 +216,26 @@ class ExperimentWebTests(unittest.TestCase):
             WORKFLOW_DETAILS_HTML,
         )
         self.assertIn("Evaluation happens after the workflows", web.workflow_details_page())
+
+    def test_editorial_ui_regressions_are_locked_down(self) -> None:
+        run_page = web.new_run_page()
+        home_page = web.index()
+
+        self.assertIn(
+            "select option { background:var(--card); color:var(--fg); }",
+            run_page,
+        )
+        self.assertIn("stroke:currentColor", run_page)
+        self.assertNotIn("☀️", run_page)
+        self.assertNotIn("🌙", run_page)
+        self.assertIn('class="landing-intro-cards"', home_page)
+        self.assertIn(".landing-rail a::before", home_page)
+        self.assertIn(
+            "#experiments-table { display:table; table-layout:fixed; overflow:visible; }",
+            EXPERIMENTS_HTML,
+        )
+        self.assertIn('data-label="Problem"', EXPERIMENTS_HTML)
+        self.assertIn(".tabs { flex-wrap:wrap; overflow:visible; }", EXPERIMENT_DETAIL_HTML)
 
     def test_settings_api_persists_overrides_without_returning_secrets(self) -> None:
         response = web.api_save_settings(web.AppSettingsRequest(values={

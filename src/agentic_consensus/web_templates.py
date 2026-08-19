@@ -26,18 +26,22 @@ from .variants.v2_moderated_reviewer import prompts as v2_prompts
 from .variants.v3_adversarial_reviewer import prompts as v3_prompts
 
 _SHARED_CSS = """
-:root { color-scheme: light dark; --fg:#111; --muted:#666; --bg:#fff; --card:#f6f6f7;
-        --line:#e2e2e5; --ok:#0a7d33; --warn:#a2500a; --err:#c0392b; --accent:#3b5bdb; }
+:root { color-scheme: light dark; --fg:#29251e; --muted:#6f6658; --bg:#f3ecdd;
+        --card:#e9deca; --line:#cbbda5; --ok:#42704d; --warn:#925f25;
+        --err:#a9473d; --accent:#725637; }
 @media (prefers-color-scheme: dark) {
-  :root { --fg:#e8e8ea; --muted:#9a9aa2; --bg:#131316; --card:#1c1c21;
-          --line:#2c2c33; --ok:#4ac16f; --warn:#e0a458; --err:#f28b82; --accent:#8fa4ff; }
+  :root { color-scheme:dark; --fg:#edf4ff; --muted:#9dacc2; --bg:#0a1220;
+          --card:#142238; --line:#2b405d; --ok:#72c99a; --warn:#e6b96d;
+          --err:#f08b91; --accent:#76a9ff; }
 }
 /* Explicit choice from the theme toggle wins over the OS preference above —
    higher-specificity attribute selectors, applied via JS as data-theme on <html>. */
-:root[data-theme="light"] { color-scheme: light; --fg:#111; --muted:#666; --bg:#fff;
-      --card:#f6f6f7; --line:#e2e2e5; --ok:#0a7d33; --warn:#a2500a; --err:#c0392b; --accent:#3b5bdb; }
-:root[data-theme="dark"] { color-scheme: dark; --fg:#e8e8ea; --muted:#9a9aa2; --bg:#131316;
-      --card:#1c1c21; --line:#2c2c33; --ok:#4ac16f; --warn:#e0a458; --err:#f28b82; --accent:#8fa4ff; }
+:root[data-theme="light"] { color-scheme: light; --fg:#29251e; --muted:#6f6658; --bg:#f3ecdd;
+      --card:#e9deca; --line:#cbbda5; --ok:#42704d; --warn:#925f25;
+      --err:#a9473d; --accent:#725637; }
+:root[data-theme="dark"] { color-scheme:dark; --fg:#edf4ff; --muted:#9dacc2; --bg:#0a1220;
+      --card:#142238; --line:#2b405d; --ok:#72c99a; --warn:#e6b96d;
+      --err:#f08b91; --accent:#76a9ff; }
 * { box-sizing: border-box; }
 body { margin:0; padding:2.5rem 1.25rem 5rem; background:var(--bg); color:var(--fg);
        font:16px/1.6 ui-sans-serif,-apple-system,"Segoe UI",Roboto,sans-serif; }
@@ -63,6 +67,7 @@ label { display:block; font-size:.85rem; font-weight:600; margin:0 0 .35rem; }
 input[type=number], input[type=text], input[type=password], select { width:100%; font:inherit; padding:.6rem .75rem;
                       background:var(--card); color:var(--fg); border:1px solid var(--line);
                       border-radius:8px; }
+select option { background:var(--card); color:var(--fg); }
 button { font:inherit; font-weight:600; padding:.7rem 1.4rem; border-radius:8px; border:none;
          background:var(--accent); color:#fff; cursor:pointer; }
 button:disabled { opacity:.5; cursor:default; }
@@ -93,10 +98,12 @@ pre { white-space:pre-wrap; word-wrap:break-word; background:var(--bg);
             padding:.3rem 0; border-bottom:2px solid transparent; }
 .topnav a:hover { color:var(--fg); }
 .topnav a.active { color:var(--accent); border-bottom-color:var(--accent); }
-.theme-toggle { background:transparent; color:var(--fg); border:1px solid var(--line);
+.theme-toggle { background:transparent; color:var(--accent); border:1px solid var(--line);
                 border-radius:8px; width:2.2rem; height:2.2rem; padding:0; font-size:1rem;
-                line-height:1; display:flex; align-items:center; justify-content:center; }
-.theme-toggle:hover { background:rgba(128,128,128,.1); }
+                line-height:1; display:flex; flex:0 0 2.2rem; align-items:center; justify-content:center; }
+.theme-toggle svg { width:1.05rem; height:1.05rem; fill:none; stroke:currentColor;
+                    stroke-width:1.8; stroke-linecap:round; stroke-linejoin:round; }
+.theme-toggle:hover { background:rgba(128,128,128,.1); color:var(--fg); }
 .back-link { display:inline-block; color:var(--accent); text-decoration:none;
              font-size:.85rem; font-weight:600; margin:0 0 .85rem; }
 .back-link:hover { text-decoration:underline; }
@@ -186,7 +193,9 @@ table.runs-table td.problem-cell { max-width:28rem; overflow:hidden; text-overfl
 .model-field .field-help { white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 .ts-wrapper.single .ts-control,.ts-dropdown { background:var(--card); color:var(--fg);
     border-color:var(--line); }
-.ts-control input { color:var(--fg); }
+.ts-control input { color:var(--fg) !important; }
+.ts-control input::placeholder { color:var(--muted); opacity:1; }
+.ts-dropdown .option,.ts-dropdown .create { color:var(--fg); }
 .ts-dropdown .active { background:rgba(59,91,219,.14); color:var(--fg); }
 .model-option { display:flex; flex-direction:column; line-height:1.35; }
 .model-option small { color:var(--muted); }
@@ -348,6 +357,99 @@ table.runs-table td.problem-cell { max-width:28rem; overflow:hidden; text-overfl
 .details-content ul, .details-content ol { padding-left:1.4rem; margin:.6em 0; }
 .details-content pre code { background:none; padding:0; }
 .empty-hint { color:var(--muted); }
+
+/* Shared editorial system, promoted from the selected compact case-study design. */
+body { font-size:15px; }
+h1 { max-width:22ch; font-size:clamp(2rem,4vw,3.35rem); line-height:1.04;
+     letter-spacing:-.04em; text-wrap:pretty; }
+h2 { letter-spacing:.08em; }
+.sub { max-width:64ch; font-size:1rem; line-height:1.6; }
+.topnav { margin-bottom:2.25rem; }
+.topnav a { letter-spacing:.01em; }
+.theme-toggle { border-radius:6px; }
+.page-header { padding:.4rem 0 .7rem; border-bottom:1px solid var(--line); }
+.page-header h1 { font-size:clamp(2rem,4vw,3.35rem); }
+.back-link { letter-spacing:.04em; text-transform:uppercase; font-size:.72rem; }
+.link-button,button { border-radius:5px; }
+.link-button { background:var(--accent); }
+form { margin-top:1.25rem; padding:1.25rem 0; border-top:1px solid var(--line);
+       border-bottom:1px solid var(--line); }
+textarea,input[type=number],input[type=text],input[type=password],select,
+.history-toolbar input[type=search] { border-radius:4px; background:var(--card); }
+.field-help { line-height:1.5; }
+.model-grid { padding:1rem 0; border-top:1px solid var(--line); border-bottom:1px solid var(--line); }
+.panel,.architecture-card,.answer-card,.role-card,.evaluation-placeholder {
+  border-radius:5px; background:rgba(255,255,255,.16); box-shadow:none;
+}
+:root[data-theme="dark"] .panel,:root[data-theme="dark"] .architecture-card,
+:root[data-theme="dark"] .answer-card,:root[data-theme="dark"] .role-card,
+:root[data-theme="dark"] .evaluation-placeholder { background:rgba(255,255,255,.035); }
+.architecture-card { border-top:3px solid var(--line); }
+.architecture-card.running { border-top-color:var(--accent); }
+.architecture-card.completed { border-top-color:var(--ok); }
+.architecture-card.failed { border-top-color:var(--err); }
+.tab-shell { border-radius:5px; background:transparent; box-shadow:none; }
+.tabs { flex-wrap:wrap; overflow:visible; }
+.tabs { padding:.35rem .5rem 0; background:rgba(255,255,255,.1); }
+.tab-button { border-radius:4px 4px 0 0; }
+.tab-button.active { background:var(--bg); bottom:0; transform:translateY(1px); }
+.tab-panel { background:transparent; }
+.history-toolbar { margin-top:1.25rem; padding-top:1rem; border-top:1px solid var(--line); }
+table.runs-table { display:block; overflow-x:auto; margin-top:.75rem; border-top:1px solid var(--line);
+                   scrollbar-color:var(--accent) transparent; }
+table.runs-table th { color:var(--accent); letter-spacing:.08em; }
+table.runs-table tbody tr:hover { background:rgba(114,86,55,.09); }
+:root[data-theme="dark"] table.runs-table tbody tr:hover { background:rgba(193,166,107,.08); }
+#experiments-table { display:table; table-layout:fixed; overflow:visible; }
+#experiments-table th,#experiments-table td { overflow-wrap:anywhere; }
+#experiments-table .metric-stack { min-width:0; white-space:normal; }
+#experiments-table th:nth-child(2) { width:20%; }
+.layout { grid-template-columns:minmax(13rem,17rem) minmax(0,1fr); gap:1.25rem; }
+.flow-panel { border-top:3px solid var(--accent); }
+.details-panel { background:transparent; }
+.details-meta li,.meta li { border-radius:4px; background:rgba(255,255,255,.16); }
+.flow-btn { border-radius:4px; }
+.flow-node.selected .flow-btn { background:rgba(114,86,55,.1); }
+.replay-header { padding-bottom:1.2rem; border-bottom:1px solid var(--line); }
+.replay-meta li { border-radius:4px; }
+.case-section { padding:2rem 0; }
+.case-section h2 { font-size:1.2rem; letter-spacing:-.02em; }
+.workflow-detail { border-top:1px solid var(--line); }
+.workflow-detail .version { letter-spacing:.08em; text-transform:uppercase; }
+.workflow-detail-content > img { border-radius:5px; }
+.role-card { border-top:3px solid var(--line); }
+.comparison-table th { color:var(--accent); letter-spacing:.08em; }
+.prompt-modal { border-radius:5px; }
+.settings-form { padding:1rem 0; }
+.settings-summary .panel { border-top:3px solid var(--accent); }
+hr { border:0; border-top:1px solid var(--line); margin:1.5rem 0; }
+@media (max-width:680px) {
+  body { padding:1.25rem .9rem 4rem; }
+  .topnav { align-items:flex-start; }
+  .topnav-links,.topnav-actions { gap:.7rem; }
+  h1 { font-size:2.25rem; }
+  .page-header { align-items:flex-start; }
+  .link-button { white-space:nowrap; }
+}
+@media (max-width:860px) {
+  .layout { grid-template-columns:1fr; }
+}
+@media (max-width:900px) {
+  #experiments-table { display:block; border-top:0; }
+  #experiments-table thead { display:none; }
+  #experiments-table tbody,#experiments-table tr,#experiments-table td { display:block; width:100%; }
+  #experiments-table tr { margin-bottom:.8rem; border:1px solid var(--line);
+                          border-top:3px solid var(--accent); background:var(--card); }
+  #experiments-table td { display:grid; grid-template-columns:minmax(6rem,8rem) minmax(0,1fr);
+                          gap:.75rem; border-bottom:1px solid var(--line); }
+  #experiments-table td:last-child { border-bottom:0; }
+  #experiments-table td::before { content:attr(data-label); color:var(--accent);
+                                  font-size:.7rem; font-weight:700; letter-spacing:.07em;
+                                  text-transform:uppercase; }
+  #experiments-table td.problem-cell { max-width:none; white-space:normal; }
+  #experiments-table td.empty-hint { display:block; }
+  #experiments-table td.empty-hint::before { content:none; }
+}
 """
 
 # --- Shared JS ----------------------------------------------------------------
@@ -366,7 +468,16 @@ _SHARED_JS = r"""
   if (!btn) return;
   const systemPrefersDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
   const current = () => document.documentElement.getAttribute("data-theme") || (systemPrefersDark ? "dark" : "light");
-  const paint = () => { btn.textContent = current() === "dark" ? "☀️" : "🌙"; };
+  const themeIcon = theme => theme === "dark"
+    ? '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3.5"></circle><path d="M12 2v2M12 20v2M4.93 4.93l1.42 1.42M17.65 17.65l1.42 1.42M2 12h2M20 12h2M4.93 19.07l1.42-1.42M17.65 6.35l1.42-1.42"></path></svg>'
+    : '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20.5 14.2A8.5 8.5 0 0 1 9.8 3.5 8.5 8.5 0 1 0 20.5 14.2Z"></path></svg>';
+  const paint = () => {
+    const theme = current();
+    const nextLabel = theme === "dark" ? "Switch to light theme" : "Switch to dark theme";
+    btn.innerHTML = themeIcon(theme);
+    btn.setAttribute("aria-label", nextLabel);
+    btn.title = nextLabel;
+  };
   paint();
   btn.addEventListener("click", () => {
     const next = current() === "dark" ? "light" : "dark";
@@ -812,13 +923,13 @@ _THEME_INIT_SCRIPT = """
 """
 
 
-def _page(*, active: str, body: str, script: str) -> str:
+def _page(*, active: str, body: str, script: str, css: str = "") -> str:
     return f"""<!doctype html>
 <html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Agentic Consensus</title>
 <link rel="stylesheet" href="/assets/tom-select/tom-select.default.min.css">
-<style>{_SHARED_CSS}</style>
+<style>{_SHARED_CSS}{css}</style>
 <script>{_THEME_INIT_SCRIPT}</script>
 </head>
 <body><main>
@@ -1047,95 +1158,155 @@ problemEl.addEventListener("keydown", (e) => {
 
 RUN_HTML = _page(active="single-run", body=_HOME_BODY, script=_HOME_SCRIPT)
 
-_LANDING_BODY = """
-<header class="case-header">
-  <div class="eyebrow">AI Engineering Case Study</div>
-  <h1>Evaluating Agentic Consensus Workflows</h1>
-  <p class="subtitle">I built and compared different AI review workflows to see when extra agents improve quality and when the extra cost is worth it.</p>
-</header>
-
-<div class="case-two-column">
-  <section class="case-section">
-    <h2>Why I built it</h2>
-    <p class="lead">I built this project after seeing the same pattern many times: one AI agent creates an answer, but a second agent finds missing details, edge cases, or problems. The first agent then improves its answer. The second agent checks it again.</p>
-    <p>This happened when reviewing pull requests, creating AI skills, and building evaluation frameworks. I sometimes had to move an answer back and forth between different models until the result was good enough.</p>
-  </section>
-
-  <section class="case-section">
-    <h2>How I built it</h2>
-    <p>I use <strong>LangGraph</strong> to build the workflows and manage the steps between agents. I use <strong>LangSmith</strong> to trace runs and inspect what each agent does. The app also evaluates final answers against saved criteria.</p>
-    <div class="case-stack">
-      <span class="case-tag">LangGraph</span>
-      <span class="case-tag">LangSmith</span>
-      <span class="case-tag">LLM Evaluation</span>
-      <span class="case-tag">Multi-Agent Workflows</span>
-      <span class="case-tag">Cost Analysis</span>
-      <span class="case-tag">Tracing &amp; Observability</span>
-    </div>
-  </section>
-</div>
-
-<section class="case-section workflow-detail">
-  <h2>Three ways to reach consensus</h2>
-  <p>The small workflow became an experiment. I created three versions to compare their answers, cost, tokens, and speed.</p>
-  <div class="case-architectures">
-    <article class="case-card">
-      <img class="workflow-image" src="/assets/workflows/v1.jpg" alt="V1 graph: Agent A and Agent B review loop">
-      <div class="case-card-content">
-        <span class="version">V1 — Two agents</span>
-        <h3>Post-hoc Review</h3>
-        <p>Agent A writes the answer first. Agent B then creates review criteria and checks the answer. If changes are needed, it sends feedback to Agent A.</p>
-        <a class="run-details-link" href="/workflow-details#v1">More details</a>
-      </div>
-    </article>
-    <article class="case-card">
-      <img class="workflow-image" src="/assets/workflows/v2.jpg" alt="V2 graph: intake, Agent A and Agent B review loop, then finalize">
-      <div class="case-card-content">
-        <span class="version">V2 — With a moderator</span>
-        <h3>Moderated Review</h3>
-        <p>A moderator first makes the user's problem clearer and creates fixed criteria. Agent A writes the answer, and Agent B reviews it against those criteria.</p>
-        <a class="run-details-link" href="/workflow-details#v2">More details</a>
-      </div>
-    </article>
-    <article class="case-card">
-      <img class="workflow-image" src="/assets/workflows/v3.jpg" alt="V3 graph: intake, Agent A and adversarial Agent B review loop, then finalize">
-      <div class="case-card-content">
-        <span class="version">V3 — with an adversarial reviewer</span>
-        <h3>Adversarial Review</h3>
-        <p>This version also starts with a moderator. But Agent B tries to prove that the answer is not ready. It approves only when it cannot find a real blocker.</p>
-        <a class="run-details-link" href="/workflow-details#v3">More details</a>
-      </div>
-    </article>
-  </div>
-</section>
-
-<section class="case-section">
-  <h2>What I compare</h2>
-  <p>I run the same tasks through different workflows and model combinations, then compare the results.</p>
-  <div class="case-metrics">
-    <div class="case-metric"><strong>Quality</strong><span>How well the final answer meets the criteria</span></div>
-    <div class="case-metric"><strong>Iterations</strong><span>How many revisions were needed</span></div>
-    <div class="case-metric"><strong>Tokens</strong><span>Total input and output usage</span></div>
-    <div class="case-metric"><strong>Cost</strong><span>Provider-reported model cost</span></div>
-    <div class="case-metric"><strong>Latency</strong><span>Total time for the workflow</span></div>
-  </div>
-</section>
-
-<section class="case-section">
-  <h2>Questions I want to answer</h2>
-  <div class="case-questions">
-    <div class="case-question">Does an intake moderator improve the result enough to justify its extra cost?</div>
-    <div class="case-question">Does an adversarial reviewer find more useful problems than a normal reviewer?</div>
-    <div class="case-question">Can a cheaper model review almost as well as an expensive model?</div>
-    <div class="case-question">When does another review round stop being useful?</div>
-    <div class="case-question">Which workflow gives the best balance between quality, cost, and speed?</div>
-  </div>
-</section>
-
-<footer class="case-footer">AI engineering project: orchestration, evaluation, tracing, and cost-quality trade-offs.</footer>
+_LANDING_CSS = """
+:root { scroll-behavior:smooth; }
+:root,:root[data-theme="light"] {
+  color-scheme:light; --fg:#29251e; --muted:#6f6658; --bg:#f3ecdd;
+  --card:#e9deca; --line:#cbbda5; --accent:#725637;
+  --ok:#42704d; --warn:#925f25; --err:#a9473d;
+}
+@media (prefers-color-scheme:dark) {
+  :root { color-scheme:dark; --fg:#edf4ff; --muted:#9dacc2; --bg:#0a1220;
+          --card:#142238; --line:#2b405d; --accent:#76a9ff;
+          --ok:#72c99a; --warn:#e6b96d; --err:#f08b91; }
+}
+:root[data-theme="dark"] {
+  color-scheme:dark; --fg:#edf4ff; --muted:#9dacc2; --bg:#0a1220;
+  --card:#142238; --line:#2b405d; --accent:#76a9ff;
+  --ok:#72c99a; --warn:#e6b96d; --err:#f08b91;
+}
+.landing-memo { display:grid; grid-template-columns:13rem minmax(0,1fr); gap:3rem;
+                padding-top:1.6rem; }
+.landing-rail { position:sticky; top:1.5rem; align-self:start; }
+.landing-mark { width:2.3rem; height:2.3rem; display:grid; place-items:center;
+                border-radius:50%; background:var(--fg); color:var(--bg);
+                font-weight:900; margin-bottom:1.2rem; }
+.landing-kicker { color:var(--accent); font-size:.72rem; font-weight:800;
+                  letter-spacing:.11em; text-transform:uppercase; }
+.landing-rail ol { list-style:none; margin:1.2rem 0; padding:0; counter-reset:memo; }
+.landing-rail li { counter-increment:memo; border-bottom:1px solid var(--line);
+                   color:var(--muted); font-size:.75rem; }
+.landing-rail a { display:block; padding:.55rem 0; color:inherit; text-decoration:none; }
+.landing-rail a::before { content:'0' counter(memo); display:inline-block; min-width:1.8rem;
+                          color:var(--accent); }
+.landing-rail a:hover,.landing-rail a:focus-visible { color:var(--fg); text-decoration:underline;
+                                                      text-underline-offset:.2rem; }
+.landing-main { min-width:0; }
+.landing-header { padding:.35rem 0 1.7rem; }
+.landing-header .landing-kicker { margin-bottom:.8rem; }
+.landing-header h1 { max-width:18ch; font-size:clamp(2rem,4.4vw,3.7rem); line-height:1.02;
+                     letter-spacing:-.045em; margin:0; text-wrap:pretty; }
+.landing-header p { max-width:60ch; color:var(--muted); font-size:1.04rem;
+                    line-height:1.65; margin:1rem 0 0; }
+.landing-section { padding:0 0 1.7rem; margin-bottom:1.7rem; border-bottom:1px solid var(--line);
+                   scroll-margin-top:1.5rem; }
+.landing-section h2 { margin:0 0 .45rem; color:var(--fg); font-size:1rem;
+                      letter-spacing:-.01em; text-transform:none; }
+.landing-section > p { color:var(--muted); font-size:.86rem; line-height:1.6; margin:.7rem 0 0; }
+.landing-section > p.lead { color:var(--fg); font-size:.96rem; }
+.landing-intro-cards { display:grid; grid-template-columns:repeat(2,minmax(0,1fr));
+                       gap:1rem; margin-bottom:1.7rem; }
+.landing-intro-cards .landing-section { display:flex; flex-direction:column; min-width:0;
+                                        margin:0; padding:1rem; border:1px solid var(--line);
+                                        border-top:3px solid var(--accent); background:var(--card); }
+.landing-intro-cards .landing-section .case-stack { margin-top:auto; padding-top:.8rem; }
+.landing-section .case-stack { margin-top:.8rem; }
+.landing-section .case-tag { background:rgba(255,255,255,.22); font-size:.7rem; }
+.landing-section .case-architectures { gap:1.2rem; margin-top:1rem; }
+.landing-section .case-card { border:0; border-top:3px solid var(--accent);
+                              border-radius:0; background:transparent; }
+.landing-section .workflow-image { height:25rem; margin-top:.7rem; border:0; border-radius:5px; }
+.landing-section .case-card-content { padding:.85rem 0 0; }
+.landing-section .case-card p { font-size:.8rem; line-height:1.55; }
+.landing-section .case-metrics { gap:.55rem; margin-top:1rem; }
+.landing-section .case-metric { border-radius:0; padding:.75rem; background:rgba(255,255,255,.2); }
+.landing-section .case-questions { gap:.55rem; margin-top:.8rem; }
+.landing-section .case-question { padding:.65rem .8rem; background:rgba(255,255,255,.22);
+                                  font-size:.78rem; line-height:1.5; }
+.landing-footer { color:var(--muted); font-size:.74rem; padding:0 0 1rem; }
+@media (max-width:900px) {
+  .landing-memo { grid-template-columns:1fr; }
+  .landing-rail { display:none; }
+  .landing-section .case-architectures { grid-template-columns:1fr; }
+}
+@media (max-width:640px) {
+  .landing-intro-cards { grid-template-columns:1fr; }
+  .landing-section .case-metrics,.landing-section .case-questions { grid-template-columns:1fr; }
+}
+@media (prefers-reduced-motion:reduce) {
+  :root { scroll-behavior:auto; }
+}
 """
 
-HOME_HTML = _page(active="home", body=_LANDING_BODY, script="")
+_LANDING_BODY = """
+<div class="landing-memo">
+  <aside class="landing-rail">
+    <div class="landing-mark">AC</div>
+    <div class="landing-kicker">AI Engineering Case Study</div>
+    <ol>
+      <li><a href="#why-i-built-it">Why I built it</a></li>
+      <li><a href="#how-i-built-it">How I built it</a></li>
+      <li><a href="#ways-to-reach-consensus">Three ways to reach consensus</a></li>
+      <li><a href="#what-i-compare">What I compare</a></li>
+      <li><a href="#questions-i-want-to-answer">Questions I want to answer</a></li>
+    </ol>
+  </aside>
+
+  <div class="landing-main">
+    <header class="landing-header">
+      <div class="landing-kicker">AI Engineering Case Study</div>
+      <h1>Evaluating Agentic Consensus Workflows</h1>
+      <p>I built and compared different AI review workflows to see when extra agents improve quality and when the extra cost is worth it.</p>
+    </header>
+
+    <div class="landing-intro-cards">
+      <section class="landing-section" id="why-i-built-it">
+        <h2>Why I built it</h2>
+        <p class="lead">I built this project after seeing the same pattern many times: one AI agent creates an answer, but a second agent finds missing details, edge cases, or problems. The first agent then improves its answer. The second agent checks it again.</p>
+        <p>This happened when reviewing pull requests, creating AI skills, and building evaluation frameworks. I sometimes had to move an answer back and forth between different models until the result was good enough.</p>
+      </section>
+
+      <section class="landing-section" id="how-i-built-it">
+        <h2>How I built it</h2>
+        <p>I use <strong>LangGraph</strong> to build the workflows and manage the steps between agents. I use <strong>LangSmith</strong> to trace runs and inspect what each agent does. The app also evaluates final answers against saved criteria.</p>
+        <div class="case-stack">
+          <span class="case-tag">LangGraph</span><span class="case-tag">LangSmith</span>
+          <span class="case-tag">LLM Evaluation</span><span class="case-tag">Multi-Agent Workflows</span>
+          <span class="case-tag">Cost Analysis</span><span class="case-tag">Tracing &amp; Observability</span>
+        </div>
+      </section>
+    </div>
+
+    <section class="landing-section" id="ways-to-reach-consensus">
+      <h2>Three ways to reach consensus</h2>
+      <p>The small workflow became an experiment. I created three versions to compare their answers, cost, tokens, and speed.</p>
+      <div class="case-architectures">
+        <article class="case-card"><img class="workflow-image" src="/assets/workflows/v1.jpg" alt="V1 graph: Agent A and Agent B review loop"><div class="case-card-content"><span class="version">V1 — Two agents</span><h3>Post-hoc Review</h3><p>Agent A writes the answer first. Agent B then creates review criteria and checks the answer. If changes are needed, it sends feedback to Agent A.</p><a class="run-details-link" href="/workflow-details#v1">More details</a></div></article>
+        <article class="case-card"><img class="workflow-image" src="/assets/workflows/v2.jpg" alt="V2 graph: intake, Agent A and Agent B review loop, then finalize"><div class="case-card-content"><span class="version">V2 — With a moderator</span><h3>Moderated Review</h3><p>A moderator first makes the user's problem clearer and creates fixed criteria. Agent A writes the answer, and Agent B reviews it against those criteria.</p><a class="run-details-link" href="/workflow-details#v2">More details</a></div></article>
+        <article class="case-card"><img class="workflow-image" src="/assets/workflows/v3.jpg" alt="V3 graph: intake, Agent A and adversarial Agent B review loop, then finalize"><div class="case-card-content"><span class="version">V3 — with an adversarial reviewer</span><h3>Adversarial Review</h3><p>This version also starts with a moderator. But Agent B tries to prove that the answer is not ready. It approves only when it cannot find a real blocker.</p><a class="run-details-link" href="/workflow-details#v3">More details</a></div></article>
+      </div>
+    </section>
+
+    <section class="landing-section" id="what-i-compare">
+      <h2>What I compare</h2>
+      <p>I run the same tasks through different workflows and model combinations, then compare the results.</p>
+      <div class="case-metrics">
+        <div class="case-metric"><strong>Quality</strong><span>How well the final answer meets the criteria</span></div><div class="case-metric"><strong>Iterations</strong><span>How many revisions were needed</span></div><div class="case-metric"><strong>Tokens</strong><span>Total input and output usage</span></div><div class="case-metric"><strong>Cost</strong><span>Provider-reported model cost</span></div><div class="case-metric"><strong>Latency</strong><span>Total time for the workflow</span></div>
+      </div>
+    </section>
+
+    <section class="landing-section" id="questions-i-want-to-answer">
+      <h2>Questions I want to answer</h2>
+      <div class="case-questions">
+        <div class="case-question">Does an intake moderator improve the result enough to justify its extra cost?</div><div class="case-question">Does an adversarial reviewer find more useful problems than a normal reviewer?</div><div class="case-question">Can a cheaper model review almost as well as an expensive model?</div><div class="case-question">When does another review round stop being useful?</div><div class="case-question">Which workflow gives the best balance between quality, cost, and speed?</div>
+      </div>
+    </section>
+    <footer class="landing-footer">AI engineering project: orchestration, evaluation, tracing, and cost-quality trade-offs.</footer>
+  </div>
+</div>
+"""
+
+HOME_HTML = _page(active="home", body=_LANDING_BODY, script="", css=_LANDING_CSS)
 # Backwards-compatible template name for code importing the old home/run page.
 INDEX_HTML = RUN_HTML
 
@@ -1471,15 +1642,15 @@ function renderExperiments() {
     const variants = Object.fromEntries(experiment.variants.map(item => [item.variant, item]));
     const problem = escapeHtml(experiment.problem);
     return `<tr data-id="${experiment.id}">
-      <td>${new Date(experiment.created_at).toLocaleString()}</td>
-      <td class="problem-cell" title="${problem}">${problem}</td>
-      <td>${statusBadge(experiment.status)}</td>
-      <td><span class="badge ${experiment.evaluation_status === "completed" ? "ok" : "warn"}"
+      <td data-label="Created">${new Date(experiment.created_at).toLocaleString()}</td>
+      <td data-label="Problem" class="problem-cell" title="${problem}">${problem}</td>
+      <td data-label="Status">${statusBadge(experiment.status)}</td>
+      <td data-label="Evaluated"><span class="badge ${experiment.evaluation_status === "completed" ? "ok" : "warn"}"
                 title="${escapeHtml(experiment.evaluation_status.replaceAll("_", " "))}">${experiment.evaluation_status === "completed" ? "Done" : "Waiting"}</span></td>
-      <td>${variantSummary(variants["v1-posthoc-reviewer"])}</td>
-      <td>${variantSummary(variants["v2-moderated-reviewer"])}</td>
-      <td>${variantSummary(variants["v3-adversarial-reviewer"])}</td>
-      <td>${formatCost(experiment.total_cost)}</td>
+      <td data-label="V1">${variantSummary(variants["v1-posthoc-reviewer"])}</td>
+      <td data-label="V2">${variantSummary(variants["v2-moderated-reviewer"])}</td>
+      <td data-label="V3">${variantSummary(variants["v3-adversarial-reviewer"])}</td>
+      <td data-label="Total cost">${formatCost(experiment.total_cost)}</td>
     </tr>`;
   }).join("");
 }
